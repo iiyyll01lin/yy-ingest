@@ -59,7 +59,7 @@ async def task_runner(
                     f.write(file_bytes)
                 pdf_bytes = read_file(temp_dir)[0]
                 shutil.rmtree(temp_dir)
-                print(f"del file:{temp_dir}")
+                logging.info(f"del file:{temp_dir}")
             else:
                 raise Exception("The file format does not comply with the standard")
             loop = asyncio.get_event_loop()
@@ -68,14 +68,14 @@ async def task_runner(
             )
             new_md_path = await process_md(md_path, UPLOAD_URL)
 
-            print("[task_runner] Extracting process completed.")
+            logging.info("[task_runner] Extracting process completed.")
 
             TASKS[task_id]["progress"] = 40
 
             update_time_estimate(task_id, start_time_total)
 
             extract_time = time.time() - start_time_extract
-            print(f"[TIMING] Extraction process took {extract_time:.2f} seconds")
+            logging.info(f"[TIMING] Extraction process took {extract_time:.2f} seconds")
 
             input_dir = get_directory_from_file_path(new_md_path)
 
@@ -87,18 +87,18 @@ async def task_runner(
 
             start_time_chunking = time.time()
 
-            print("[task_runner] Starting chunking process...")
-            print(f"[task_runner] task_id: {task_id}")
-            print(f"[task_runner] start_page: {start_page}")
-            print(f"[task_runner] end_page: {end_page}")
-            print(f"[task_runner] input_dir: {input_dir}")
-            print(f"[task_runner] original_pdf_name: {url}")
-            print(f"[task_runner] chunk_methods: {chunk_method}")
-            print(f"[task_runner] chunk_max_size: {chunk_max_size}")
-            print(f"[task_runner] chunk_size: {chunk_size}")
-            print(f"[task_runner] chunk_overlap: {chunk_overlap}")
-            print(f"[task_runner] avg_chunk_size: {avg_chunk_size}")
-            print(f"[task_runner] encoding_name: {encoding_name}")
+            logging.info("[task_runner] Starting chunking process...")
+            logging.info(f"[task_runner] task_id: {task_id}")
+            logging.info(f"[task_runner] start_page: {start_page}")
+            logging.info(f"[task_runner] end_page: {end_page}")
+            logging.info(f"[task_runner] input_dir: {input_dir}")
+            logging.info(f"[task_runner] original_pdf_name: {url}")
+            logging.info(f"[task_runner] chunk_methods: {chunk_method}")
+            logging.info(f"[task_runner] chunk_max_size: {chunk_max_size}")
+            logging.info(f"[task_runner] chunk_size: {chunk_size}")
+            logging.info(f"[task_runner] chunk_overlap: {chunk_overlap}")
+            logging.info(f"[task_runner] avg_chunk_size: {avg_chunk_size}")
+            logging.info(f"[task_runner] encoding_name: {encoding_name}")
 
             # Generate chunker_configs based on the chunk methods
             chunker_configs = []
@@ -135,11 +135,11 @@ async def task_runner(
                 if method in method_param_mapping:
                     chunker_configs.append(method_param_mapping[method])
 
-            print(
+            logging.info(
                 f"[task_runner] Generated {len(chunker_configs)} chunker configurations"
             )
 
-            print(f"[task_runner] chunker_configs: {chunker_configs}")
+            logging.info(f"[task_runner] chunker_configs: {chunker_configs}")
 
             all_results, chunker_class_names = batch_run_chunkers(
                 chunker_configs=chunker_configs,
@@ -147,8 +147,8 @@ async def task_runner(
                 original_pdf_name=url,
             )
 
-            # print(f"[task_runner] all_results: {all_results}")
-            # print(f"[task_runner] chunker_class_names: {chunker_class_names}")
+            # logging.info(f"[task_runner] all_results: {all_results}")
+            # logging.info(f"[task_runner] chunker_class_names: {chunker_class_names}")
 
             # Collect results from all chunkers
             output_chunks = {}
@@ -159,7 +159,7 @@ async def task_runner(
 
             update_time_estimate(task_id, start_time_total)
 
-            print("[task_runner] Chunking process completed.")
+            logging.info("[task_runner] Chunking process completed.")
 
             chunking_time = time.time() - start_time_chunking
 
@@ -170,8 +170,8 @@ async def task_runner(
             update_time_estimate(task_id, start_time_total)
 
             total_time = time.time() - start_time_total
-            print(f"[TIMING] Total processing took {total_time:.2f} seconds")
-            print(
+            logging.info(f"[TIMING] Total processing took {total_time:.2f} seconds")
+            logging.info(
                 f"[TIMING] Summary: Extract: {extract_time:.2f}s, Chunking: {chunking_time:.2f}s, Total: {total_time:.2f}s"
             )
 
@@ -211,7 +211,7 @@ async def task_runner(
     except Exception as e:
         end_time = time.time()
         total_time = end_time - start_time_total
-        print(f"[ERROR] Task failed after {total_time:.2f} seconds: {str(e)}")
+        logging.info(f"[ERROR] Task failed after {total_time:.2f} seconds: {str(e)}")
         TASKS[task_id]["status"] = "failed"  # More consistent status naming
         TASKS[task_id]["error_details"] = str(e)  # Store error details separately
         TASKS[task_id]["timing"] = {"total_time": round(total_time, 2)}
@@ -253,8 +253,6 @@ def get_directory_from_file_path(file_path: str) -> str:
     Returns:
         Directory path (e.g., "/app/result/fb48d287-69c3-48f2-bd8e-c1cc09650b99/")
     """
-    import os
-
     directory = os.path.dirname(file_path)
 
     # Ensure the path ends with a trailing slash
