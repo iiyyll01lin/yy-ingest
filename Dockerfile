@@ -11,7 +11,7 @@ WORKDIR /app
 # 安装依赖
 COPY requirements.txt /app/
 
-RUN pip install -U "magic-pdf[full]" && \
+RUN pip install -U "magic-pdf[full]==1.3.1" && \
     pip install -r requirements.txt
 
 
@@ -26,7 +26,9 @@ RUN apt-get update && apt-get install -y \
 # 复制应用代码
 # COPY . /app
 
-RUN unset http_proxy && unset https_proxy
+ENV http_proxy=""
+ENV https_proxy=""
+ENV no_proxy=""
 
 EXPOSE 8752
 # CMD ["python3", "startup.py"]
