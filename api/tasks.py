@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import List
 import logging
 import tempfile
+from functools import partial
 
 from api.config import UPLOAD_URL, SEMAPHORE
 from api.pdf_processor import download_pdf, extract_pdf, process_md, read_file
@@ -14,33 +15,34 @@ from api.config import TASKS
 from api.models import ChunkMethod, EncodingMethod
 from api.yy_chunker.yy_chunker_main import batch_run_chunkers
 
+
 async def task_runner(
-        task_id: str,
-        url: str,
-        start_page: int = 1,
-        end_page: int = 1,
-        chunk_max_size: int = 5100,
-        chunk_method: List[ChunkMethod] = [ChunkMethod.CLUSTER_SEMANTIC],
-        chunk_size: int = 2100,
-        chunk_overlap: int = 1700,
-        avg_chunk_size: int = 2100,
-        encoding_name: EncodingMethod = EncodingMethod.CL100K_BASE,
+    task_id: str,
+    url: str,
+    start_page: int = 1,
+    end_page: int = 1,
+    chunk_max_size: int = 5100,
+    chunk_method: List[ChunkMethod] = [ChunkMethod.CLUSTER_SEMANTIC],
+    chunk_size: int = 2100,
+    chunk_overlap: int = 1700,
+    avg_chunk_size: int = 5100,
+    encoding_name: EncodingMethod = EncodingMethod.CL100K_BASE,
 ):
     try:
         start_time_total = time.time()
-        TASKS[task_id]["status"] = "running"
-        TASKS[task_id]["progress"] = 0
-        TASKS[task_id]["current_step"] = "initializing"
+        TASKS[task_id]["status"] = "extracting"
+        # TASKS[task_id]["progress"] = 0
+        # TASKS[task_id]["current_step"] = "initializing"
 
         # Add initial estimated time as unknown
-        TASKS[task_id]["estimated_remaining"] = None
+        # TASKS[task_id]["estimated_remaining"] = None
 
         async with SEMAPHORE:
             # Extraction phase
-            TASKS[task_id]["current_step"] = "extracting"
-            TASKS[task_id]["progress"] = 10
+            # TASKS[task_id]["current_step"] = "extracting"
+            # TASKS[task_id]["progress"] = 10
 
-            update_time_estimate(task_id, start_time_total)
+            # update_time_estimate(task_id, start_time_total)
 
             start_time_extract = time.time()
             logging.info("[task_runner] Starting extracting process...")
@@ -49,13 +51,15 @@ async def task_runner(
             # pdf_bytes = await download_pdf(url)
             pdf_extensions = ["pdf"]
             office_extensions = ["ppt", "pptx", "doc", "docx"]
-            file_extension = re.search(r'\.([a-zA-Z0-9]+)$', url).group(1)
+            file_extension = re.search(r"\.([a-zA-Z0-9]+)$", url).group(1)
             if file_extension in pdf_extensions:
                 pdf_bytes = await download_pdf(url)
             elif file_extension in office_extensions:
                 file_bytes = await download_pdf(url)
                 temp_dir = tempfile.mkdtemp()
-                with open(os.path.join(temp_dir, f"temp_file.{file_extension}"), "wb") as f:
+                with open(
+                    os.path.join(temp_dir, f"temp_file.{file_extension}"), "wb"
+                ) as f:
                     f.write(file_bytes)
                 pdf_bytes = read_file(temp_dir)[0]
                 shutil.rmtree(temp_dir)
@@ -70,9 +74,9 @@ async def task_runner(
 
             logging.info("[task_runner] Extracting process completed.")
 
-            TASKS[task_id]["progress"] = 40
+            # TASKS[task_id]["progress"] = 40
 
-            update_time_estimate(task_id, start_time_total)
+            # update_time_estimate(task_id, start_time_total)
 
             extract_time = time.time() - start_time_extract
             logging.info(f"[TIMING] Extraction process took {extract_time:.2f} seconds")
@@ -80,10 +84,10 @@ async def task_runner(
             input_dir = get_directory_from_file_path(new_md_path)
 
             # Chunking phase
-            TASKS[task_id]["current_step"] = "chunking"
-            TASKS[task_id]["progress"] = 50
+            # TASKS[task_id]["current_step"] = "chunking"
+            # TASKS[task_id]["progress"] = 50
 
-            update_time_estimate(task_id, start_time_total)
+            # update_time_estimate(task_id, start_time_total)
 
             start_time_chunking = time.time()
 
@@ -140,34 +144,40 @@ async def task_runner(
             )
 
             logging.info(f"[task_runner] chunker_configs: {chunker_configs}")
-
-            all_results, chunker_class_names = batch_run_chunkers(
-                chunker_configs=chunker_configs,
-                input_dir=input_dir,
-                original_pdf_name=url,
+            TASKS[task_id]["status"] = "chunking"
+            all_results, chunker_class_names = await loop.run_in_executor(
+                None,
+                partial(
+                    batch_run_chunkers,
+                    chunker_configs=chunker_configs,
+                    input_dir=input_dir,
+                    original_pdf_name=url,
+                ),
             )
 
             # logging.info(f"[task_runner] all_results: {all_results}")
-            # logging.info(f"[task_runner] chunker_class_names: {chunker_class_names}")
+            logging.info(f"[task_runner] chunker_class_names: {chunker_class_names}")
 
             # Collect results from all chunkers
             output_chunks = {}
-            for class_name in chunker_class_names:
-                output_chunks[class_name] = all_results[class_name]
+            # yy: since we do not have multiple chunker output, just return the results
+            output_chunks = all_results[0]
+            # for class_name in chunker_class_names:
+            #     output_chunks[class_name] = all_results[class_name]
 
-            TASKS[task_id]["progress"] = 90
+            # TASKS[task_id]["progress"] = 90
 
-            update_time_estimate(task_id, start_time_total)
+            # update_time_estimate(task_id, start_time_total)
 
             logging.info("[task_runner] Chunking process completed.")
 
             chunking_time = time.time() - start_time_chunking
 
             # Finalizing
-            TASKS[task_id]["current_step"] = "finalizing"
-            TASKS[task_id]["progress"] = 95
+            # TASKS[task_id]["current_step"] = "finalizing"
+            # TASKS[task_id]["progress"] = 95
 
-            update_time_estimate(task_id, start_time_total)
+            # update_time_estimate(task_id, start_time_total)
 
             total_time = time.time() - start_time_total
             logging.info(f"[TIMING] Total processing took {total_time:.2f} seconds")
@@ -175,11 +185,11 @@ async def task_runner(
                 f"[TIMING] Summary: Extract: {extract_time:.2f}s, Chunking: {chunking_time:.2f}s, Total: {total_time:.2f}s"
             )
 
-            TASKS[task_id]["timing"] = {
-                "extract_time": round(extract_time, 2),
-                "chunking_time": round(chunking_time, 2),
-                "total_time": round(total_time, 2),
-            }
+            # TASKS[task_id]["timing"] = {
+            #     "extract_time": round(extract_time, 2),
+            #     "chunking_time": round(chunking_time, 2),
+            #     "total_time": round(total_time, 2),
+            # }
 
             # uncomment this to save to file unified
             # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -203,9 +213,9 @@ async def task_runner(
 
             # All done
             TASKS[task_id]["status"] = "success"
-            TASKS[task_id]["progress"] = 100
-            TASKS[task_id]["current_step"] = "completed"
-            TASKS[task_id]["estimated_remaining"] = 0  # No time remaining
+            # TASKS[task_id]["progress"] = 100
+            # TASKS[task_id]["current_step"] = "completed"
+            # TASKS[task_id]["estimated_remaining"] = 0  # No time remaining
             TASKS[task_id]["result"] = output_chunks
 
     except Exception as e:
@@ -214,7 +224,7 @@ async def task_runner(
         logging.info(f"[ERROR] Task failed after {total_time:.2f} seconds: {str(e)}")
         TASKS[task_id]["status"] = "failed"  # More consistent status naming
         TASKS[task_id]["error_details"] = str(e)  # Store error details separately
-        TASKS[task_id]["timing"] = {"total_time": round(total_time, 2)}
+        # TASKS[task_id]["timing"] = {"total_time": round(total_time, 2)}
 
 
 async def cleanup_tasks():
@@ -224,7 +234,9 @@ async def cleanup_tasks():
         next_midnight = datetime(now.year, now.month, now.day) + timedelta(days=1)
         time_to_wait = (next_midnight - now).total_seconds()
 
-        logging.info(f"The next cleaning will be performed on {next_midnight}, wait for {time_to_wait} seconds.")
+        logging.info(
+            f"The next cleaning will be performed on {next_midnight}, wait for {time_to_wait} seconds."
+        )
         await asyncio.sleep(time_to_wait)
         TASKS.clear()
         logging.info(f"TASKS have been cleared.")

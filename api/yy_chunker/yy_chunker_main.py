@@ -325,12 +325,20 @@ def batch_run_chunkers(
     output_dir: Optional[str] = None,
     original_pdf_name: str = "",
     max_workers: Optional[int] = None,
-) -> tuple[Dict[str, List[Dict[str, Any]]], List[str]]:
-    """Run multiple chunkers in parallel on the same input directory."""
+) -> tuple[List[List[Dict[str, Any]]], List[str]]:
+    """Run multiple chunkers in parallel on the same input directory.
+
+    Returns:
+        A tuple containing:
+        - List of chunking results (each item is the result from one chunker)
+        - List of chunker class names (in the same order as the results)
+    """
     if output_dir is None:
         output_dir = "/app/api/yy_chunker/chunker/test_data/temp_output"
 
-    results = {}
+    # yy: since we do not have multiple chunker output, just return list
+    results = []
+    # results = {}
     chunker_class_names = []
     errors = []
 
@@ -369,9 +377,11 @@ def batch_run_chunkers(
                         chunker, input_dir, output_dir, original_pdf_name
                     )
 
+                    # yy: modify to not adding chunker name as key
+                    results.append(result)
                     chunker_class_name = chunker.__class__.__name__
                     chunker_class_names.append(chunker_class_name)
-                    results[chunker_class_name] = result
+                    # results[chunker_class_name] = result
                     print(f"Completed processing with {chunker_class_name}")
                 except Exception as exc:
                     error_msg = f"Error processing {config} in main process: {exc}"
@@ -422,8 +432,10 @@ def batch_run_chunkers(
                             print(tb)
                             errors.append(error_msg)
                         else:
+                            # yy: modify to not adding chunker name as key
+                            results.append(result)
                             chunker_class_names.append(chunker_class_name)
-                            results[chunker_class_name] = result
+                            # results[chunker_class_name] = result
                             print(f"Completed processing with {chunker_class_name}")
                     except Exception as exc:
                         config = future_to_config[future]

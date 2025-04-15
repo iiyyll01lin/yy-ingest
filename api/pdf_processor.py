@@ -13,6 +13,7 @@ from pathlib import Path
 import tempfile
 import shutil
 
+
 async def download_pdf(url: str) -> bytes:
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
@@ -22,7 +23,9 @@ async def download_pdf(url: str) -> bytes:
         raise Exception("PDF retrieval failed")
 
 
-def extract_pdf(task_id: str, pdf_bytes: bytes, start_page: int = 1, end_page: int = None) -> str:
+def extract_pdf(
+    task_id: str, pdf_bytes: bytes, start_page: int = 1, end_page: int = None
+) -> str:
     name_without_suff = f"/app/result/{task_id}/{task_id}"
     # prepare env
     local_image_dir = f"/app/result/{task_id}/images"
@@ -38,18 +41,28 @@ def extract_pdf(task_id: str, pdf_bytes: bytes, start_page: int = 1, end_page: i
     try:
         # inference
         if ds.classify() == SupportedPdfParseMethod.OCR:
-            infer_result = ds.apply(doc_analyze, ocr=True, start_page_id=start_page - 1, end_page_id=end_page)
+            infer_result = ds.apply(
+                doc_analyze,
+                ocr=True,
+                start_page_id=start_page - 1,
+                end_page_id=end_page,
+            )
             # pipeline
             pipe_result = infer_result.pipe_ocr_mode(image_writer)
         else:
-            infer_result = ds.apply(doc_analyze, ocr=False, start_page_id=start_page - 1, end_page_id=end_page)
+            infer_result = ds.apply(
+                doc_analyze,
+                ocr=False,
+                start_page_id=start_page - 1,
+                end_page_id=end_page,
+            )
             # pipeline
             pipe_result = infer_result.pipe_txt_mode(image_writer)
         # dump markdown
         pipe_result.dump_md(md_writer, f"{name_without_suff}.md", image_dir)
+        del pipe_result
     finally:
         # release GPU resources
-        del pipe_result
         torch.cuda.empty_cache()
         # waiting for synchronization to ensure release completion
         torch.cuda.synchronize()
@@ -62,10 +75,10 @@ async def check_file_exists(file_path: str) -> bool:
 
 async def request_post(url: str, img) -> str:
     async with httpx.AsyncClient(timeout=10.0) as client:
-        ret = await client.post(url, files={'file': img})
+        ret = await client.post(url, files={"file": img})
     if ret.status_code == 200:
         json_file = json.loads(ret.text)
-        return json_file['data']
+        return json_file["data"]
     else:
         raise Exception("Image URL retrieval failed")
 
@@ -73,21 +86,25 @@ async def request_post(url: str, img) -> str:
 async def process_md(md_path: str, upload_url: str) -> str:
     with open(md_path, "r", encoding="utf-8") as f:
         markdown_text = f.read()
-    image_links = re.findall(r'!\[.*?]\((.*?)\)', markdown_text)
-    root_image_path = re.search(r'^(.*/)[^/]+$', md_path).group(1)
+    image_links = re.findall(r"!\[.*?]\((.*?)\)", markdown_text)
+    root_image_path = re.search(r"^(.*/)[^/]+$", md_path).group(1)
     if image_links:
         for link in image_links:
             if await check_file_exists(root_image_path + link):
-                with open(root_image_path + link, 'rb') as img:
+                with open(root_image_path + link, "rb") as img:
                     img_url = await request_post(upload_url, img)
-                markdown_text = re.sub(r'!\[.*?]\(' + re.escape(link) + r'\)', f'<img src="{img_url}">', markdown_text)
-        with open(md_path, 'w', encoding='utf-8') as file:
+                markdown_text = re.sub(
+                    r"!\[.*?]\(" + re.escape(link) + r"\)",
+                    f'<img src="{img_url}">',
+                    markdown_text,
+                )
+        with open(md_path, "w", encoding="utf-8") as file:
             file.write(markdown_text)
     return md_path
-    
+
 
 def read_file(path):
-    suffixes = ['.ppt', '.pptx', '.doc', '.docx']
+    suffixes = [".ppt", ".pptx", ".doc", ".docx"]
     fns = []
     ret = []
     if os.path.isdir(path):
@@ -110,7 +127,7 @@ def read_file(path):
             raise e
         fn_path = Path(fn)
         pdf_fn = f"{temp_dir}/{fn_path.stem}.pdf"
-        with open(pdf_fn, 'rb') as f:
+        with open(pdf_fn, "rb") as f:
             pdf_bytes = f.read()
         ret.append(pdf_bytes)
     shutil.rmtree(temp_dir)

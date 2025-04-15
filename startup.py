@@ -14,15 +14,18 @@ import logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()]
+    handlers=[logging.StreamHandler()],
 )
+
 
 @asynccontextmanager
 async def startup_event(app: FastAPI):
     await start_cleanup()
     yield
 
+
 app = FastAPI(lifespan=startup_event)
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -50,7 +53,8 @@ async def transform(request_data: RequestData):
             encoding_name=request_data.encoding_name,
         )
     )
-    return ResponseData(data=task_id, duration="started")
+    return ResponseData(data=task_id)
+    # return ResponseData(data=task_id, duration="started")
 
 
 @app.get("/status/{task_id}")
@@ -60,27 +64,29 @@ async def check_status(task_id: str):
         return ResponseData(state=False, msg="Task not found", data=None)
 
     # When task is still processing
-    if task["status"] in ["pending", "running"]:
+    if task["status"] in ["pending", "extracting", "chunking"]:
+
+        response_data = None
         # Return progress information without the full result
-        response_data = {
-            "progress": task.get("progress", 0),  # Add progress tracking
-            "current_step": task.get("current_step", ""),  # Add step tracking
-            "timing": task.get("timing", {})  # Include timing if available
-        }
+        # response_data = {
+        #     "progress": task.get("progress", 0),  # Add progress tracking
+        #     "current_step": task.get("current_step", ""),  # Add step tracking
+        #     "timing": task.get("timing", {})  # Include timing if available
+        # }
         return ResponseData(
-            state=True,
+            # state=True,
             msg=task["status"],
             data=response_data,
-            duration=task.get("timing")
+            # duration=task.get("timing")
         )
 
     # When task completed successfully
     elif task["status"] == "success":
         return ResponseData(
-            state=True,
+            # state=True,
             msg=task["status"],
             data=task["result"],
-            duration=task["timing"]
+            # duration=task["timing"]
         )
 
     # When task failed
@@ -88,9 +94,9 @@ async def check_status(task_id: str):
         error_details = task.get("error_details", task["status"])
         return ResponseData(
             state=False,
-            msg=task["status"],
-            data={"error": error_details},
-            duration=task.get("timing")
+            msg=error_details,
+            # data={"error": error_details},
+            # duration=task.get("timing")
         )
 
 

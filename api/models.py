@@ -27,18 +27,19 @@ class RequestData(BaseModel):
         [ChunkMethod.CLUSTER_SEMANTIC], description="list of chunk methods to apply"
     )
     chunk_max_size: int = Field(
-        2100, description="max size of chunks", gt=1700, le=5100, alias="max_chunk_size"
+        5100, description="max size of chunks", gt=1700, le=6800, alias="max_chunk_size"
     )
     start_page: int = Field(1, description="start page", ge=1)
+    # if end_page is None, means start page to last page
     end_page: Optional[int] = Field(None, description="end page")
     chunk_size: int = Field(
-        2100, description="chunk size for tokenization", gt=0, le=5100
+        2100, description="chunk size for tokenization", gt=0, le=6800
     )
     chunk_overlap: int = Field(
         1700, description="overlap between chunks", ge=0, le=5100
     )
     avg_chunk_size: int = Field(
-        2100, description="average chunk size target", gt=800, le=5100
+        5100, description="average chunk size target", gt=800, le=6800
     )
     encoding_name: EncodingMethod = Field(
         EncodingMethod.CL100K_BASE, description="tokenizer encoding name"
@@ -134,7 +135,7 @@ class ResponseData(BaseModel):
     state: bool = Field(True, description="state code")
     msg: str = Field("success", description="error message")
     data: Any = Field(None, description="data or log")
-    duration: Any = Field(None, description="time")
+    # duration: Any = Field(None, description="time")
 
     @field_validator("data")
     def validate_data(cls, v):

@@ -45,7 +45,7 @@ while true; do
     fi
     
     # Make the API call and store the response
-    response=$(curl -s -X GET "http://10.3.205.227:8852/status/$uuid")
+    response=$(curl -s -X GET "http://10.3.205.227:8752/status/$uuid")
     
     # Extract status from response
     status=$(echo "$response" | grep -o '"msg":"[^"]*"' | cut -d '"' -f 4)
@@ -76,8 +76,8 @@ while true; do
     # If task has completed or failed, exit the loop
     if [[ "$status" == "success" || "$status" == "failed" ]]; then
         echo "Task completed with status: $status"
-        # echo "Full response:"
-        # echo "$response" | python -m json.tool
+        echo "Full response:"
+        echo "$response" | python3 -m json.tool
         break
     fi
     
