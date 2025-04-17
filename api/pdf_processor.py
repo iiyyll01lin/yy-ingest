@@ -3,7 +3,10 @@ import re
 import json
 import torch
 import httpx
+import requests
+import base64
 
+from api.config import VL_MODEL_URL, KEY
 from magic_pdf.data.data_reader_writer import FileBasedDataWriter
 from magic_pdf.data.dataset import PymuDocDataset
 from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
@@ -132,3 +135,63 @@ def read_file(path):
         ret.append(pdf_bytes)
     shutil.rmtree(temp_dir)
     return ret
+
+
+def chat_llm_vl(url, param, key):
+    headers = {"Authorization": f"Bearer {key}", "content-type": "application/json"}
+    ret = requests.post(url, headers=headers, json=param)
+    if ret.status_code == 200:
+        json_file = json.loads(ret.text)
+        res = json_file["choices"][0]["message"]["content"]
+        return res
+    else:
+        raise Exception("Image retrieval failed")
+
+
+async def gen_img_desc(output_chunks: list):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for i in range(len(output_chunks)):
+            chunk_content = output_chunks[i]["content"]
+            match_img_urls = re.findall(r'<img\s+src="([^"]+)"', chunk_content)
+            if len(match_img_urls) != 0:
+                for j in range(len(match_img_urls)):
+                    img_url = match_img_urls[j]
+                    response = await client.get(img_url)
+                    if response.status_code == 200:
+                        base64_image = base64.b64encode(response.content).decode(
+                            "utf-8"
+                        )
+                        prompt = [
+                            {
+                                "type": "text",
+                                "text": "请简要描述这张图，**不要超过100字**",
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/jpeg;base64," + base64_image
+                                },
+                            },
+                        ]
+                        messages = [
+                            {"role": "user", "content": prompt},
+                        ]
+                        dic = {
+                            "model": "Qwen2.5-VL-72B-Instruct",
+                            "messages": messages,
+                            "temperature": 0.8,
+                            "max_tokens": 4096,
+                        }
+                        img_desc = chat_llm_vl(VL_MODEL_URL, dic, KEY)
+                        pattern = rf'(<img\s+src="{re.escape(img_url)}">)'
+                        chunk_content = re.sub(
+                            pattern,
+                            rf"\1\n上图主要传达的信息是:{img_desc}",
+                            chunk_content,
+                        )
+                    else:
+                        raise Exception("Image retrieval failed")
+                output_chunks[i]["content"] = chunk_content
+            else:
+                continue
+    return output_chunks
