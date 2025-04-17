@@ -64,7 +64,12 @@ async def check_status(task_id: str):
         return ResponseData(state=False, msg="Task not found", data=None)
 
     # When task is still processing
-    if task["status"] in ["pending", "extracting", "chunking"]:
+    if task["status"] in [
+        "pending",
+        "extracting",
+        "chunking",
+        "generate image description",
+    ]:
 
         response_data = None
         # Return progress information without the full result

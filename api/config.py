@@ -14,3 +14,7 @@ TASKS = {}
 
 # control the concurrent quantity
 SEMAPHORE = asyncio.Semaphore(4)
+
+# Qwen2.5-72B-VL
+VL_MODEL_URL = "http://10.3.30.13:4000/v1/chat/completions"
+KEY = "sk-E3bVLke1aSFGgSpMC38aCe8e5c5746F99736Ae22A2856543"

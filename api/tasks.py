@@ -8,9 +8,17 @@ from typing import List
 import logging
 import tempfile
 from functools import partial
+import httpx
+import base64
 
 from api.config import UPLOAD_URL, SEMAPHORE
-from api.pdf_processor import download_pdf, extract_pdf, process_md, read_file
+from api.pdf_processor import (
+    download_pdf,
+    extract_pdf,
+    process_md,
+    read_file,
+    gen_img_desc,
+)
 from api.config import TASKS
 from api.models import ChunkMethod, EncodingMethod
 from api.yy_chunker.yy_chunker_main import batch_run_chunkers
@@ -173,6 +181,13 @@ async def task_runner(
 
             chunking_time = time.time() - start_time_chunking
 
+            logging.info("[task_runner] Starting generate image description process...")
+            start_time_description = time.time()
+            TASKS[task_id]["status"] = "generate image description"
+            output_chunks = await gen_img_desc(output_chunks=output_chunks)
+            logging.info("[task_runner] generate image description completed.")
+            description_time = time.time() - start_time_description
+
             # Finalizing
             # TASKS[task_id]["current_step"] = "finalizing"
             # TASKS[task_id]["progress"] = 95
@@ -182,7 +197,7 @@ async def task_runner(
             total_time = time.time() - start_time_total
             logging.info(f"[TIMING] Total processing took {total_time:.2f} seconds")
             logging.info(
-                f"[TIMING] Summary: Extract: {extract_time:.2f}s, Chunking: {chunking_time:.2f}s, Total: {total_time:.2f}s"
+                f"[TIMING] Summary: Extract: {extract_time:.2f}s, Chunking: {chunking_time:.2f}s, Generate Image Description: {description_time:.2f}s, Total: {total_time:.2f}s"
             )
 
             # TASKS[task_id]["timing"] = {
