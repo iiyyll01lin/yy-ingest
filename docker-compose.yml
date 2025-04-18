@@ -1,0 +1,33 @@
+services:
+  mineru_test:
+    image: mineru133:v1.3.3
+    container_name: mineru_test
+    networks:
+      - mineru-v130_default
+    ports:
+      - "8753:8753"
+    volumes:
+      - /data/zqy/MinerU-test:/app
+      - /data/mineru-test/slanet-plus.onnx:/opt/conda/lib/python3.10/site-packages/rapid_table/models/slanet-plus.onnx
+      - /data/mineru-test/mineru_models/magic-pdf.json:/root/magic-pdf.json
+      - /data/mineru-test/mineru_models/.cache/huggingface:/root/.cache/huggingface
+      - /data/mineru-test/mineru_models/.cache/tiktoken:/root/.cache/tiktoken
+      - /data/mineru-test/result:/app/result
+    devices:
+      - /dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools
+      - /dev/nvidia-modeset
+      - /dev/nvidiactl
+      - /dev/nvidia0
+      - /dev/nvidia1
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - http_proxy=http://proxy2.tao.inventec:3128
+      - https_proxy=http://proxy2.tao.inventec:3128      
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+
+networks:
+  mineru-v130_default:
+    external: true
