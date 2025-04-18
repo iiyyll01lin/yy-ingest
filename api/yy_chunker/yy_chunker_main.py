@@ -25,6 +25,7 @@ from chunker.chunking import (
     KamradtModifiedChunker,
     BaseChunker,
 )
+from chunker.chunking.langchain_markdown_chunker import LangchainMarkdownChunker
 from chunker.chunker_runner import BaseChunkerRunner
 from chunker.utils import openai_token_count
 
@@ -163,39 +164,40 @@ def is_subprocess():
     return multiprocessing.current_process().name != "MainProcess"
 
 
-def create_chunker(chunker_type: str, **kwargs) -> BaseChunker:
+def create_chunker(chunker_type: ChunkMethod, **kwargs) -> BaseChunker:
     """Create a chunker of the specified type with the given parameters.
 
     Args:
-        chunker_type: Type of chunker (recursive_token, fixed_token, kamradt, cluster_semantic, llm_semantic)
+        chunker_type: Type of chunker (Enum member from ChunkMethod)
         **kwargs: Additional parameters for the chunker
 
     Returns:
-        A configured chunker instance
+        A configured chunker instance conforming to BaseChunker interface
     """
     ef = kwargs.pop("embedding_function", None)
+    print(f"Creating chunker of type: {chunker_type} with kwargs: {kwargs}")
 
-    if chunker_type == "recursive_token":
+    if chunker_type == ChunkMethod.RECURSIVE_TOKEN:
         return RecursiveTokenChunker(
             chunk_size=kwargs.get("chunk_size", 2100),
             chunk_overlap=kwargs.get("chunk_overlap", 1700),
             length_function=openai_token_count,
         )
-    elif chunker_type == "fixed_token":
+    elif chunker_type == ChunkMethod.FIXED_TOKEN:
         return FixedTokenChunker(
             chunk_size=kwargs.get("chunk_size", 2100),
             chunk_overlap=kwargs.get("chunk_overlap", 1700),
             encoding_name=kwargs.get("encoding_name", "cl100k_base"),
         )
-    elif chunker_type == "kamradt":
+    elif chunker_type == ChunkMethod.KAMRADT:
         if ef is None:
             raise ValueError("embedding_function is required for Kamradt chunker")
         return KamradtModifiedChunker(
             avg_chunk_size=kwargs.get("avg_chunk_size", 2100), embedding_function=ef
         )
-    elif chunker_type == "cluster_semantic":
+    elif chunker_type == ChunkMethod.CLUSTER_SEMANTIC:
         if ef is None:
-            print("ef is None")
+            print("ef is None for ClusterSemantic chunker")  # More specific log
             raise ValueError(
                 "embedding_function is required for ClusterSemantic chunker"
             )
@@ -204,16 +206,23 @@ def create_chunker(chunker_type: str, **kwargs) -> BaseChunker:
             max_chunk_size=kwargs.get("max_chunk_size", 5100),
             length_function=openai_token_count,
         )
+    elif chunker_type == ChunkMethod.LANGCHAIN_MARKDOWN:
+        return LangchainMarkdownChunker(
+            headers_to_split_on=kwargs.get("headers_to_split_on", None),
+            return_each_line=kwargs.get("return_each_line", False),
+            strip_headers=kwargs.get("strip_headers", False),
+        )
     # TODO: uncomment when ready
-    # elif chunker_type == "llm_semantic":
+    # elif chunker_type == ChunkMethod.LLM_SEMANTIC:
     #     return LLMSemanticChunker(
     #         organisation=kwargs.get("organisation", "openai"),
     #         model_name=kwargs.get("model_name", "gpt-4o"),
     #         api_key=kwargs.get("api_key"),
     #     )
     else:
-        print("Unknown chunker type")
-        raise ValueError(f"Unknown chunker type: {chunker_type}")
+        # This should ideally not happen since using Enums correctly upstream
+        print(f"Unknown or unsupported chunker type received: {chunker_type}")
+        raise ValueError(f"Unknown or unsupported chunker type: {chunker_type}")
 
 
 def run_chunker_on_directory(
@@ -347,10 +356,24 @@ def batch_run_chunkers(
     no_embedding = []
 
     for config in chunker_configs:
+        # Check against Enum members
         if config["type"] in [ChunkMethod.KAMRADT, ChunkMethod.CLUSTER_SEMANTIC]:
             needs_embedding.append(config)
-        else:
+        # Add LANGCHAIN_MARKDOWN to the list that doesn't need embedding
+        elif config["type"] in [
+            ChunkMethod.FIXED_TOKEN,
+            ChunkMethod.RECURSIVE_TOKEN,
+            ChunkMethod.LANGCHAIN_MARKDOWN,
+        ]:
             no_embedding.append(config)
+        else:
+            # TODO: Handle unknown types or types needing embedding but not listed
+            # For now, assume they might need embedding or log a warning
+            print(
+                f"Warning: Uncategorized chunker type '{config['type']}' found in config. Assuming it needs embedding if not explicitly handled."
+            )
+            # Decide whether to add to needs_embedding or handle differently
+            # needs_embedding.append(config) # Or log/raise error
 
     # Process configs that need embedding first in the main process
     if needs_embedding:
