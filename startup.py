@@ -51,6 +51,10 @@ async def transform(request_data: RequestData):
             chunk_overlap=request_data.chunk_overlap,
             avg_chunk_size=request_data.avg_chunk_size,
             encoding_name=request_data.encoding_name,
+            # LANGCHAIN_MARKDOWN
+            headers_to_split_on=request_data.headers_to_split_on,
+            return_each_line=request_data.return_each_line,
+            strip_headers=request_data.strip_headers,
         )
     )
     return ResponseData(data=task_id)
@@ -108,4 +112,4 @@ async def check_status(task_id: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8752)
+    uvicorn.run(app, host="0.0.0.0", port=8753)

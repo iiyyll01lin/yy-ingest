@@ -29,5 +29,6 @@ python-Levenshtein
 # anthropic
 attrs
 langchain_community
+langchain
 sentence-transformers
 langchain-huggingface

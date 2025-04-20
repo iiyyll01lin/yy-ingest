@@ -4,7 +4,7 @@ import asyncio
 import re
 import time
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional, Tuple, Union
 import logging
 import tempfile
 from functools import partial
@@ -35,6 +35,11 @@ async def task_runner(
     chunk_overlap: int = 1700,
     avg_chunk_size: int = 5100,
     encoding_name: EncodingMethod = EncodingMethod.CL100K_BASE,
+    # Parameters for LANGCHAIN_MARKDOWN
+    headers_to_split_on: Optional[List[Tuple[str, str]]] = None,
+    return_each_line: bool = False,
+    strip_headers: bool = True,
+    # **kwargs # capture extra?
 ):
     try:
         start_time_total = time.time()
@@ -106,11 +111,24 @@ async def task_runner(
             logging.info(f"[task_runner] input_dir: {input_dir}")
             logging.info(f"[task_runner] original_pdf_name: {url}")
             logging.info(f"[task_runner] chunk_methods: {chunk_method}")
-            logging.info(f"[task_runner] chunk_max_size: {chunk_max_size}")
-            logging.info(f"[task_runner] chunk_size: {chunk_size}")
-            logging.info(f"[task_runner] chunk_overlap: {chunk_overlap}")
-            logging.info(f"[task_runner] avg_chunk_size: {avg_chunk_size}")
-            logging.info(f"[task_runner] encoding_name: {encoding_name}")
+            if ChunkMethod.LANGCHAIN_MARKDOWN in chunk_method:
+                logging.info(
+                    f"[task_runner] headers_to_split_on: {headers_to_split_on}"
+                )
+                logging.info(f"[task_runner] return_each_line: {return_each_line}")
+                logging.info(f"[task_runner] strip_headers: {strip_headers}")
+            if any(
+                m in [ChunkMethod.FIXED_TOKEN, ChunkMethod.RECURSIVE_TOKEN]
+                for m in chunk_method
+            ):
+                logging.info(f"[task_runner] chunk_size: {chunk_size}")
+                logging.info(f"[task_runner] chunk_overlap: {chunk_overlap}")
+            if ChunkMethod.FIXED_TOKEN in chunk_method:
+                logging.info(f"[task_runner] encoding_name: {encoding_name}")
+            if ChunkMethod.KAMRADT in chunk_method:
+                logging.info(f"[task_runner] avg_chunk_size: {avg_chunk_size}")
+            if ChunkMethod.CLUSTER_SEMANTIC in chunk_method:
+                logging.info(f"[task_runner] chunk_max_size: {chunk_max_size}")
 
             # Generate chunker_configs based on the chunk methods
             chunker_configs = []
@@ -140,12 +158,21 @@ async def task_runner(
                 # ChunkMethod.LLM_SEMANTIC: {
                 #     "type": ChunkMethod.LLM_SEMANTIC,
                 # },
+                ChunkMethod.LANGCHAIN_MARKDOWN: {
+                    "type": ChunkMethod.LANGCHAIN_MARKDOWN,
+                    "headers_to_split_on": headers_to_split_on,
+                    "return_each_line": return_each_line,
+                    "strip_headers": strip_headers,
+                },
             }
 
             # Add configurations for each selected method
             for method in chunk_method:
                 if method in method_param_mapping:
-                    chunker_configs.append(method_param_mapping[method])
+                    config = method_param_mapping[method].copy()
+                    chunker_configs.append(config)
+                else:
+                    logging.warning(f"Chunk method '{method}' not found in mapping.")
 
             logging.info(
                 f"[task_runner] Generated {len(chunker_configs)} chunker configurations"
@@ -153,6 +180,7 @@ async def task_runner(
 
             logging.info(f"[task_runner] chunker_configs: {chunker_configs}")
             TASKS[task_id]["status"] = "chunking"
+
             all_results, chunker_class_names = await loop.run_in_executor(
                 None,
                 partial(

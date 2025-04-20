@@ -177,7 +177,7 @@ async def gen_img_desc(output_chunks: list):
                             {"role": "user", "content": prompt},
                         ]
                         dic = {
-                            "model": "Qwen2.5-VL-72B-Instruct",
+                            "model": "Qwen2.5-VL-32B-Instruct",
                             "messages": messages,
                             "temperature": 0.8,
                             "max_tokens": 4096,
