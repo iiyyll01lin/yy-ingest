@@ -10,6 +10,8 @@ import numpy as np
 from typing import List
 from importlib import resources
 
+from chromadb.config import Settings
+
 
 def sum_of_ranges(ranges):
     return sum(end - start for start, end in ranges)
@@ -120,7 +122,9 @@ class BaseChunkerRunner:
         if chroma_db_path is not None:
             self.chroma_client = chromadb.PersistentClient(path=chroma_db_path)
         else:
-            self.chroma_client = chromadb.Client()
+            # yy: disabling posthog telemetry: anonymized_telemetry=False
+            # https://docs.trychroma.com/docs/overview/telemetry
+            self.chroma_client = chromadb.Client(Settings(anonymized_telemetry=False))
 
         self.is_general = False
 
