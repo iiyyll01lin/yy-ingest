@@ -1,6 +1,10 @@
 import sys
 import multiprocessing
 import os
+import logging  # Import logging
+
+# Set up basic logging configuration if not already done elsewhere
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 # Set the start method to 'spawn' to avoid CUDA initialization issues
@@ -67,16 +71,16 @@ class ChromaEmbeddingAdapter:
             self.device_type = self.device.type  # 'cuda' or 'cpu'
         except (AttributeError, StopIteration) as e:
             # Fallback if we can't access model parameters directly
-            print(f"Could not determine device from model parameters: {e}")
+            logging.warning(f"Could not determine device from model parameters: {e}")
             self.device_type = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Enable mixed precision if on CUDA
         self.use_amp = self.device_type == "cuda" and torch.cuda.is_available()
 
         if self.use_amp:
-            print(f"Mixed precision enabled for {self.device_type}")
+            logging.info(f"Mixed precision enabled for {self.device_type}")
         else:
-            print(f"Using standard precision on {self.device_type}")
+            logging.info(f"Using standard precision on {self.device_type}")
 
     def __call__(self, input):
         # ChromaDB expects __call__ with 'input' parameter
@@ -94,7 +98,7 @@ class ChromaEmbeddingAdapter:
                             )
                     except Exception as e:
                         # Fall back if autocast fails
-                        print(
+                        logging.warning(
                             f"Mixed precision failed, falling back to standard precision: {e}"
                         )
                         embeddings = self.langchain_embedder.embed_documents(uncached)
@@ -119,7 +123,7 @@ class ChromaEmbeddingAdapter:
                         embedding = self.langchain_embedder.embed_query(input)
                 except Exception as e:
                     # Fall back if autocast fails
-                    print(
+                    logging.warning(
                         f"Mixed precision failed, falling back to standard precision: {e}"
                     )
                     embedding = self.langchain_embedder.embed_query(input)
@@ -148,7 +152,7 @@ def create_embedding_function(
     if device is None:
         device = "cuda" if torch.cuda.is_available() and not is_subprocess() else "cpu"
 
-    print(f"Creating embedding function with device: {device}")
+    logging.info(f"Creating embedding function with device: {device}")
 
     langchain_ef = HuggingFaceEmbeddings(
         model_name=model_name,
@@ -175,7 +179,7 @@ def create_chunker(chunker_type: ChunkMethod, **kwargs) -> BaseChunker:
         A configured chunker instance conforming to BaseChunker interface
     """
     ef = kwargs.pop("embedding_function", None)
-    print(f"Creating chunker of type: {chunker_type} with kwargs: {kwargs}")
+    logging.info(f"Creating chunker of type: {chunker_type} with kwargs: {kwargs}")
 
     if chunker_type == ChunkMethod.RECURSIVE_TOKEN:
         return RecursiveTokenChunker(
@@ -191,13 +195,18 @@ def create_chunker(chunker_type: ChunkMethod, **kwargs) -> BaseChunker:
         )
     elif chunker_type == ChunkMethod.KAMRADT:
         if ef is None:
+            logging.error(
+                "embedding_function is required for Kamradt chunker but was not provided."
+            )
             raise ValueError("embedding_function is required for Kamradt chunker")
         return KamradtModifiedChunker(
             avg_chunk_size=kwargs.get("avg_chunk_size", 2100), embedding_function=ef
         )
     elif chunker_type == ChunkMethod.CLUSTER_SEMANTIC:
         if ef is None:
-            print("ef is None for ClusterSemantic chunker")  # More specific log
+            logging.error(
+                "embedding_function is required for ClusterSemantic chunker but was not provided."
+            )
             raise ValueError(
                 "embedding_function is required for ClusterSemantic chunker"
             )
@@ -221,14 +230,14 @@ def create_chunker(chunker_type: ChunkMethod, **kwargs) -> BaseChunker:
     #     )
     else:
         # This should ideally not happen since using Enums correctly upstream
-        print(f"Unknown or unsupported chunker type received: {chunker_type}")
+        logging.error(f"Unknown or unsupported chunker type received: {chunker_type}")
         raise ValueError(f"Unknown or unsupported chunker type: {chunker_type}")
 
 
 def run_chunker_on_directory(
     chunker: BaseChunker,
     input_dir: str = "chunker/test_data/",
-    output_dir: Optional[str] = None,
+    output_dir: Optional[str] = None,  # Keep output_dir for potential future use
     original_pdf_name: str = "",
 ) -> List[Dict[str, Any]]:
     """Run a chunker on markdown files in a directory.
@@ -236,51 +245,57 @@ def run_chunker_on_directory(
     Args:
         chunker: The chunker to use
         input_dir: Directory containing markdown files to chunk
-        output_dir: Directory to save output JSON files (defaults to input_dir if None)
+        output_dir: Directory to save output JSON files (defaults to input_dir if None) - currently unused for saving
+        original_pdf_name: Original name of the source PDF
 
     Returns:
-        The chunking results as a list of dictionaries
+        The chunking results as a list of dictionaries, or None if an error occurs.
     """
     runner = BaseChunkerRunner(
         markdown_dir=input_dir, original_pdf_name=original_pdf_name
     )
+    chunker_name = chunker.__class__.__name__
+    logging.info(
+        f"[{chunker_name}] Starting chunking process for directory: {input_dir}"
+    )
 
     try:
-        print(f"Chunking with {chunker.__class__.__name__}")
+        logging.info(f"[{chunker_name}] Calling runner.run...")
         json_output = runner.run(chunker)
+        logging.info(
+            f"[{chunker_name}] runner.run completed. Result type: {type(json_output)}, Length (if list): {len(json_output) if isinstance(json_output, list) else 'N/A'}"
+        )
+
+        # Optional: Add detailed logging of the first few chunks if needed for debugging
+        # if isinstance(json_output, list) and len(json_output) > 0:
+        #     logging.debug(f"[{chunker_name}] First chunk example: {json_output[0]}")
 
         # uncomment this to save to file separately
         # if output_dir is None:
         #     output_dir = "/app/api/yy_chunker/chunker/test_data/temp_output"
-
         # os.makedirs(output_dir, exist_ok=True)
-
         # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # output_filename = f"{output_dir}/output_{chunker_name}_{timestamp}.json"
+        # try:
+        #     with open(output_filename, "w") as f:
+        #         json.dump(
+        #             json_output,
+        #             f,
+        #             indent=4,
+        #             default=lambda o: str(o) if not isinstance(o, (dict, list, str, int, float, bool, type(None))) else o
+        #         )
+        #     logging.info(f"[{chunker_name}] Output saved to {output_filename}")
+        # except Exception as save_exc:
+        #     logging.error(f"[{chunker_name}] Failed to save output to {output_filename}: {save_exc}", exc_info=True)
 
-        # output_filename = (
-        #     f"{output_dir}/output_{chunker.__class__.__name__}_{timestamp}.json"
-        # )
-
-        # with open(output_filename, "w") as f:
-        #     json.dump(
-        #         json_output,
-        #         f,
-        #         indent=4,
-        #         default=lambda o: (
-        #             str(o)
-        #             if not isinstance(
-        #                 o, (dict, list, str, int, float, bool, type(None))
-        #             )
-        #             else o
-        #         ),
-        #     )
-
-        # print(f"Output saved to {output_filename}")
         return json_output
 
     except Exception as e:
-        print(f"Error chunking with {chunker.__class__.__name__}: {str(e)}")
-        return []
+        logging.error(
+            f"[{chunker_name}] Error during chunking: {str(e)}", exc_info=True
+        )
+        # Return None or an empty list to indicate failure clearly
+        return None
 
 
 # Define the worker function outside of batch_run_chunkers to make it picklable
@@ -290,41 +305,63 @@ def process_config(config, input_dir, output_dir, original_pdf_name):
     This function must be defined at module level (not inside another function)
     to be picklable for multiprocessing.
     """
+    process_name = multiprocessing.current_process().name
+    logging.info(f"[{process_name}] Worker started for config: {config}")
     try:
-        chunker_type = config.pop("type")
-        print(f"[process_config] Processing chunker_type: {chunker_type}")
-
-        # Create a copy to avoid modifying the original
+        # Make a copy to avoid modifying the original dict passed via multiprocessing
         config_copy = config.copy()
+        chunker_type = config_copy.pop("type")
+        logging.info(f"[{process_name}] Processing chunker_type: {chunker_type}")
 
-        # in the batch_run_chunkers, will not use process_config with the methods needs
-        # embedding models, aka will not use multi-process for those methods.
-        # Create embedding function if needed for this chunker type
+        # Embedding function creation is handled in the main process for GPU safety
+        # This worker assumes it receives a config *without* needing to create 'ef'
         if chunker_type in [ChunkMethod.KAMRADT, ChunkMethod.CLUSTER_SEMANTIC]:
+            # This path should ideally not be taken if separation logic in batch_run_chunkers is correct
+            logging.warning(
+                f"[{process_name}] Received embedding-dependent config {chunker_type} in worker process. This might cause issues."
+            )
+            # Attempt to create on CPU as a fallback, but this indicates a logic issue upstream
             try:
-                # Force CPU for subprocess embedding to avoid CUDA initialization issues
                 ef = create_embedding_function(device="cpu")
                 config_copy["embedding_function"] = ef
             except Exception as e:
+                logging.error(
+                    f"[{process_name}] Failed to create fallback CPU embedding function for {chunker_type}: {e}",
+                    exc_info=True,
+                )
                 return (
                     None,
                     None,
                     (
                         config,
-                        f"Failed to create embedding function: {str(e)}",
+                        f"Failed to create fallback CPU embedding function: {str(e)}",
                         traceback.format_exc(),
                     ),
                 )
 
+        logging.info(
+            f"[{process_name}] Creating chunker {chunker_type} with config: {config_copy}"
+        )
         chunker = create_chunker(chunker_type, **config_copy)
+        logging.info(
+            f"[{process_name}] Running chunker {chunker.__class__.__name__} on directory {input_dir}"
+        )
         result = run_chunker_on_directory(
             chunker, input_dir, output_dir, original_pdf_name
         )
 
         chunker_class_name = chunker.__class__.__name__
+        logging.info(
+            f"[{process_name}] Completed processing with {chunker_class_name}. Result type: {type(result)}"
+        )
+        # Return None for result if run_chunker_on_directory failed
         return chunker_class_name, result, None
     except Exception as exc:
         tb = traceback.format_exc()
+        logging.error(
+            f"[{process_name}] Unhandled exception processing config {config}: {exc}",
+            exc_info=True,
+        )
         return None, None, (config, str(exc), tb)
 
 
@@ -334,102 +371,191 @@ def batch_run_chunkers(
     output_dir: Optional[str] = None,
     original_pdf_name: str = "",
     max_workers: Optional[int] = None,
-) -> tuple[List[List[Dict[str, Any]]], List[str]]:
+) -> tuple[Optional[List[List[Dict[str, Any]]]], Optional[List[str]]]:
     """Run multiple chunkers in parallel on the same input directory.
 
     Returns:
         A tuple containing:
-        - List of chunking results (each item is the result from one chunker)
+        - List of chunking results (each item is the result from one chunker, or None if failed)
         - List of chunker class names (in the same order as the results)
+        Returns (None, None) if a critical error occurs during setup.
     """
+    logging.info(
+        f"[batch_run_chunkers] Starting batch processing. Input dir: {input_dir}, PDF: {original_pdf_name}"
+    )
+    logging.info(
+        f"[batch_run_chunkers] Received {len(chunker_configs)} chunker configurations: {chunker_configs}"
+    )
+
     if output_dir is None:
         output_dir = "/app/api/yy_chunker/chunker/test_data/temp_output"
+        logging.info(
+            f"[batch_run_chunkers] Defaulting output directory to: {output_dir}"
+        )
 
     # yy: since we do not have multiple chunker output, just return list
     results = []
-    # results = {}
     chunker_class_names = []
-    errors = []
+    errors = []  # Collect error messages for logging at the end
 
     # Separate configs by whether they need embedding
     needs_embedding = []
     no_embedding = []
 
+    logging.info(
+        "[batch_run_chunkers] Separating configurations based on embedding requirement..."
+    )
     for config in chunker_configs:
-        # Check against Enum members
-        if config["type"] in [ChunkMethod.KAMRADT, ChunkMethod.CLUSTER_SEMANTIC]:
-            needs_embedding.append(config)
-        # Add LANGCHAIN_MARKDOWN to the list that doesn't need embedding
-        elif config["type"] in [
-            ChunkMethod.FIXED_TOKEN,
-            ChunkMethod.RECURSIVE_TOKEN,
-            ChunkMethod.LANGCHAIN_MARKDOWN,
-        ]:
-            no_embedding.append(config)
-        else:
-            # TODO: Handle unknown types or types needing embedding but not listed
-            # For now, assume they might need embedding or log a warning
-            print(
-                f"Warning: Uncategorized chunker type '{config['type']}' found in config. Assuming it needs embedding if not explicitly handled."
+        try:
+            config_type = config.get("type")  # Use .get for safety
+            if config_type is None:
+                logging.warning(
+                    f"[batch_run_chunkers] Config missing 'type': {config}. Skipping."
+                )
+                errors.append(f"Config missing 'type': {config}")
+                continue
+
+            # Check against Enum members
+            if config_type in [ChunkMethod.KAMRADT, ChunkMethod.CLUSTER_SEMANTIC]:
+                needs_embedding.append(config)
+                logging.info(
+                    f"[batch_run_chunkers] Config needs embedding (main process): {config}"
+                )
+            elif config_type in [
+                ChunkMethod.FIXED_TOKEN,
+                ChunkMethod.RECURSIVE_TOKEN,
+                ChunkMethod.LANGCHAIN_MARKDOWN,
+            ]:
+                no_embedding.append(config)
+                logging.info(
+                    f"[batch_run_chunkers] Config needs no embedding (parallel process): {config}"
+                )
+            else:
+                # Handle unknown types or types needing embedding but not listed
+                logging.warning(
+                    f"[batch_run_chunkers] Uncategorized chunker type '{config_type}' found in config: {config}. Assuming no embedding needed."
+                )
+                # Decide whether to add to needs_embedding or handle differently
+                no_embedding.append(
+                    config
+                )  # Defaulting to no_embedding for safety/simplicity
+        except Exception as e:
+            logging.error(
+                f"[batch_run_chunkers] Error processing config during separation: {config} - {e}",
+                exc_info=True,
             )
-            # Decide whether to add to needs_embedding or handle differently
-            # needs_embedding.append(config) # Or log/raise error
+            errors.append(f"Error separating config {config}: {e}")
 
     # Process configs that need embedding first in the main process
     if needs_embedding:
+        logging.info(
+            f"[batch_run_chunkers] Processing {len(needs_embedding)} configs requiring embedding in the main process..."
+        )
+        ef = None  # Initialize ef outside the loop
         try:
             # Create embedding function once in the main process
-            ef = create_embedding_function(device="cuda")  # Use GPU in main process
+            logging.info(
+                "[batch_run_chunkers] Creating embedding function for main process (trying CUDA)..."
+            )
+            # Attempt CUDA first, fallback to CPU if needed or specified
+            ef_device = "cuda" if torch.cuda.is_available() else "cpu"
+            ef = create_embedding_function(device=ef_device)
+            logging.info(
+                f"[batch_run_chunkers] Embedding function created successfully on device: {ef_device}"
+            )
 
             for config in needs_embedding:
                 try:
-                    chunker_type = config["type"]
-                    print(
-                        f"[batch_run_chunkers] Processing in main process: {chunker_type}"
+                    # Make a copy to avoid modifying the original list item
+                    config_copy = config.copy()
+                    chunker_type = config_copy.pop(
+                        "type"
+                    )  # Remove type before passing to create_chunker
+                    logging.info(
+                        f"[batch_run_chunkers] Main Process: Processing {chunker_type} with config: {config_copy}"
                     )
 
-                    # Create a copy to avoid modifying the original
-                    config_copy = config.copy()
-                    if "type" in config_copy:
-                        config_copy.pop("type")
-
-                    config_copy["embedding_function"] = ef
+                    config_copy["embedding_function"] = (
+                        ef  # Add the created embedding function
+                    )
                     chunker = create_chunker(chunker_type, **config_copy)
 
+                    logging.info(
+                        f"[batch_run_chunkers] Main Process: Running chunker {chunker.__class__.__name__}..."
+                    )
                     result = run_chunker_on_directory(
                         chunker, input_dir, output_dir, original_pdf_name
                     )
-
-                    # yy: modify to not adding chunker name as key
-                    results.append(result)
                     chunker_class_name = chunker.__class__.__name__
-                    chunker_class_names.append(chunker_class_name)
-                    # results[chunker_class_name] = result
-                    print(f"Completed processing with {chunker_class_name}")
+
+                    # Check if run_chunker_on_directory returned None (indicating failure)
+                    if result is None:
+                        logging.error(
+                            f"[batch_run_chunkers] Main Process: Chunker {chunker_class_name} failed (returned None). Config: {config}"
+                        )
+                        errors.append(
+                            f"Chunker {chunker_class_name} failed in main process. Config: {config}"
+                        )
+                        # Append None to results to maintain order, or handle as needed
+                        results.append(None)
+                        chunker_class_names.append(chunker_class_name)
+                    else:
+                        # yy: modify to not adding chunker name as key
+                        results.append(result)
+                        chunker_class_names.append(chunker_class_name)
+                        logging.info(
+                            f"[batch_run_chunkers] Main Process: Completed processing with {chunker_class_name}. Result length: {len(result) if isinstance(result, list) else 'N/A'}"
+                        )
+
                 except Exception as exc:
-                    error_msg = f"Error processing {config} in main process: {exc}"
-                    print(f"ERROR: {error_msg}")
+                    error_msg = f"[batch_run_chunkers] Main Process: Error processing {config}: {exc}"
+                    logging.error(error_msg, exc_info=True)
                     errors.append(error_msg)
-                    print(traceback.format_exc())
+                    # Append None if this specific config failed, maintain order
+                    results.append(None)
+                    chunker_class_names.append(
+                        config.get("type", "UnknownType") + "_Error"
+                    )  # Placeholder name
+
         except Exception as e:
-            error_msg = f"Failed to create embedding function in main process: {str(e)}"
-            print(f"ERROR: {error_msg}")
+            # Critical error creating the main embedding function
+            error_msg = f"[batch_run_chunkers] CRITICAL: Failed to create main embedding function: {str(e)}"
+            logging.error(error_msg, exc_info=True)
             errors.append(error_msg)
-            print(traceback.format_exc())
+            # Optionally, decide if processing should stop entirely
+            # return None, None # Indicate critical failure
 
     # Process configs that don't need embedding in parallel
     if no_embedding:
+        logging.info(
+            f"[batch_run_chunkers] Processing {len(no_embedding)} configs without embedding requirement using parallel processes..."
+        )
         # Determine optimal number of workers if not specified
         if max_workers is None:
             # Use a reasonable default based on available CPUs
-            max_workers = max(1, multiprocessing.cpu_count() - 1)  # Leave one CPU free
-            print(f"Auto-detected {max_workers} worker processes")
+            cpu_count = multiprocessing.cpu_count()
+            max_workers = max(
+                1, cpu_count - 1 if cpu_count > 1 else 1
+            )  # Ensure at least 1 worker
+            logging.info(
+                f"[batch_run_chunkers] Auto-detected {max_workers} worker processes (CPU count: {cpu_count})"
+            )
+        else:
+            logging.info(
+                f"[batch_run_chunkers] Using specified max_workers: {max_workers}"
+            )
 
         # Process configs in parallel using ProcessPoolExecutor
         try:
+            # Use 'spawn' context explicitly if needed, though set_start_method should handle it
+            # context = multiprocessing.get_context("spawn")
+            # with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers, mp_context=context) as executor:
             with concurrent.futures.ProcessPoolExecutor(
                 max_workers=max_workers
             ) as executor:
+                logging.info(
+                    f"[batch_run_chunkers] ProcessPoolExecutor created with {max_workers} workers."
+                )
                 # Prepare the worker function with fixed arguments
                 worker_fn = partial(
                     process_config,
@@ -439,43 +565,101 @@ def batch_run_chunkers(
                 )
 
                 # Submit all configs for processing
+                logging.info(
+                    f"[batch_run_chunkers] Submitting {len(no_embedding)} tasks to executor..."
+                )
                 future_to_config = {
-                    executor.submit(worker_fn, config.copy()): config
+                    executor.submit(
+                        worker_fn, config
+                    ): config  # Pass the original config for error reporting
                     for config in no_embedding
                 }
+                logging.info(f"[batch_run_chunkers] All tasks submitted.")
 
                 # Collect results as they complete
+                logging.info(
+                    "[batch_run_chunkers] Waiting for parallel tasks to complete..."
+                )
+                processed_count = 0
                 for future in concurrent.futures.as_completed(future_to_config):
+                    config = future_to_config[future]
+                    processed_count += 1
+                    logging.info(
+                        f"[batch_run_chunkers] Task completed ({processed_count}/{len(no_embedding)}). Processing result for config: {config}"
+                    )
                     try:
                         chunker_class_name, result, error_info = future.result()
                         if error_info:
-                            config, exc_str, tb = error_info
-                            error_msg = f"Error processing {config}: {exc_str}"
-                            print(f"ERROR: {error_msg}")
-                            print(tb)
+                            orig_config, exc_str, tb = error_info
+                            error_msg = f"[batch_run_chunkers] Worker Error processing {orig_config}: {exc_str}"
+                            logging.error(error_msg)
+                            logging.debug(
+                                f"Worker Traceback:\n{tb}"
+                            )  # Log traceback at debug level
                             errors.append(error_msg)
+                            # Append None to results, placeholder name
+                            results.append(None)
+                            chunker_class_names.append(
+                                orig_config.get("type", "UnknownType") + "_Error"
+                            )
+                        elif chunker_class_name is None:
+                            # Handle case where worker returns None for name without error_info (shouldn't happen ideally)
+                            error_msg = f"[batch_run_chunkers] Worker returned None for chunker name for config {config}. Result was: {result}"
+                            logging.error(error_msg)
+                            errors.append(error_msg)
+                            results.append(result)  # Append result even if name is None
+                            chunker_class_names.append("UnknownWorkerResult")
                         else:
+                            # Success case from worker
                             # yy: modify to not adding chunker name as key
                             results.append(result)
                             chunker_class_names.append(chunker_class_name)
-                            # results[chunker_class_name] = result
-                            print(f"Completed processing with {chunker_class_name}")
+                            logging.info(
+                                f"[batch_run_chunkers] Completed processing with {chunker_class_name} from worker. Result type: {type(result)}"
+                            )
                     except Exception as exc:
-                        config = future_to_config[future]
-                        error_msg = f"Future for {config} raised exception: {exc}"
-                        print(f"ERROR: {error_msg}")
+                        # Exception occurred during future.result() or within the loop here
+                        error_msg = f"[batch_run_chunkers] Exception retrieving result for {config}: {exc}"
+                        logging.error(error_msg, exc_info=True)
                         errors.append(error_msg)
-                        print(traceback.format_exc())
+                        # Append None, placeholder name
+                        results.append(None)
+                        chunker_class_names.append(
+                            config.get("type", "UnknownType") + "_FutureError"
+                        )
         except Exception as e:
-            error_msg = f"Process pool execution failed: {str(e)}"
-            print(f"ERROR: {error_msg}")
+            # Error related to the ProcessPoolExecutor itself
+            error_msg = f"[batch_run_chunkers] Process pool execution failed: {str(e)}"
+            logging.error(error_msg, exc_info=True)
             errors.append(error_msg)
-            print(traceback.format_exc())
+            # Depending on severity, might return None, None
+            # return None, None
 
-    # Log any errors encountered
+    # Log any errors encountered during the whole batch process
     if errors:
-        print(f"[batch_run_chunkers] Encountered {len(errors)} errors:")
+        logging.warning(
+            f"[batch_run_chunkers] Encountered {len(errors)} errors during batch processing:"
+        )
         for i, error in enumerate(errors):
-            print(f"  Error {i+1}: {error}")
+            logging.warning(f"  Error {i+1}: {error}")
+    else:
+        logging.info(
+            "[batch_run_chunkers] Batch processing completed with no reported errors."
+        )
+
+    logging.info(
+        f"[batch_run_chunkers] Returning {len(results)} results and {len(chunker_class_names)} class names."
+    )
+    logging.debug(
+        f"[batch_run_chunkers] Final results structure (first element type if exists): {type(results[0]) if results else 'N/A'}"
+    )
+    logging.debug(f"[batch_run_chunkers] Final class names: {chunker_class_names}")
+
+    # Ensure the lengths match, even if results contain None
+    if len(results) != len(chunker_class_names):
+        logging.error(
+            f"[batch_run_chunkers] Mismatch between results ({len(results)}) and class names ({len(chunker_class_names)}) count!"
+        )
+        # Attempt to reconcile or return error indicator? For now, just log.
 
     return results, chunker_class_names
