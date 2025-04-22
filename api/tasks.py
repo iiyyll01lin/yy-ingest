@@ -195,8 +195,8 @@ async def task_runner(
                     ),
                 )
                 # Explicitly log the results immediately after the call returns
-                logging.info(f"[task_runner] batch_run_chunkers returned.")
-                logging.info(f"[task_runner] Raw all_results: {all_results}")
+                # logging.info(f"[task_runner] batch_run_chunkers returned.")
+                # logging.info(f"[task_runner] Raw all_results: {all_results}")
                 logging.info(
                     f"[task_runner] Raw chunker_class_names: {chunker_class_names}"
                 )
