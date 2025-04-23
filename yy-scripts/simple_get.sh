@@ -4,7 +4,7 @@
 # Check if UUID is provided
 if [ "$1" = "-u" ] && [ -n "$2" ]; then
     uuid="$2"
-    curl -s -X GET "http://10.3.205.227:8753/status/$uuid"
+    curl -s -X GET "http://10.3.205.227:8752/status/$uuid"
 else
     echo "Usage: $0 -u <uuid>"
     exit 1

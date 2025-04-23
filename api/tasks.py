@@ -181,23 +181,58 @@ async def task_runner(
             logging.info(f"[task_runner] chunker_configs: {chunker_configs}")
             TASKS[task_id]["status"] = "chunking"
 
-            all_results, chunker_class_names = await loop.run_in_executor(
-                None,
-                partial(
-                    batch_run_chunkers,
-                    chunker_configs=chunker_configs,
-                    input_dir=input_dir,
-                    original_pdf_name=url,
-                ),
-            )
+            try:
+                logging.info(
+                    f"[task_runner] Calling batch_run_chunkers with input_dir: {input_dir}, url: {url}"
+                )
+                all_results, chunker_class_names = await loop.run_in_executor(
+                    None,
+                    partial(
+                        batch_run_chunkers,
+                        chunker_configs=chunker_configs,
+                        input_dir=input_dir,
+                        original_pdf_name=url,
+                    ),
+                )
+                # Explicitly log the results immediately after the call returns
+                # logging.info(f"[task_runner] batch_run_chunkers returned.")
+                # logging.info(f"[task_runner] Raw all_results: {all_results}")
+                logging.info(
+                    f"[task_runner] Raw chunker_class_names: {chunker_class_names}"
+                )
 
-            # logging.info(f"[task_runner] all_results: {all_results}")
-            logging.info(f"[task_runner] chunker_class_names: {chunker_class_names}")
+            except Exception as chunk_exc:
+                logging.error(
+                    f"[task_runner] Error during batch_run_chunkers execution: {chunk_exc}",
+                    exc_info=True,
+                )
+                # Handle the error appropriately, maybe set task status to failed
+                TASKS[task_id]["status"] = "failed"
+                TASKS[task_id]["error_details"] = f"Chunking failed: {chunk_exc}"
+                return  # Exit the task runner if chunking failed critically
+
+            # Check if the results are as expected (e.g., not None)
+            if all_results is None or chunker_class_names is None:
+                logging.warning(
+                    f"[task_runner] batch_run_chunkers returned None results. all_results: {all_results}, chunker_class_names: {chunker_class_names}"
+                )
+                # Potentially handle this case, maybe raise an error or set status
+                # If this is unexpected, you need to debug inside batch_run_chunkers
+
+            # logging.info(f"[task_runner] all_results: {all_results}") # Original logging
+            # logging.info(f"[task_runner] chunker_class_names: {chunker_class_names}") # Original logging
 
             # Collect results from all chunkers
             output_chunks = {}
-            # yy: since we do not have multiple chunker output, just return the results
-            output_chunks = all_results[0]
+            # Ensure all_results is not None and is indexable before accessing
+            if all_results and isinstance(all_results, list) and len(all_results) > 0:
+                # yy: since we do not have multiple chunker output, just return the results
+                output_chunks = all_results[0]
+            else:
+                logging.warning(
+                    f"[task_runner] all_results is empty or not in expected format: {all_results}"
+                )
+                # Handle case where results are missing or malformed
             # for class_name in chunker_class_names:
             #     output_chunks[class_name] = all_results[class_name]
 

@@ -1,4 +1,4 @@
-curl -X POST http://10.3.205.227:8753/transform \
+curl -X POST http://10.3.205.227:8752/transform \
 -H "Content-Type: application/json" \
 -d '{
   "url": "https://infra-oss-fis.tao.inventec.net/km-ops/resource/files/IPC-2581C.pdf",

@@ -5,6 +5,7 @@ import torch
 import httpx
 import requests
 import base64
+import asyncio
 
 from api.config import VL_MODEL_URL, KEY
 from magic_pdf.data.data_reader_writer import FileBasedDataWriter
@@ -137,9 +138,9 @@ def read_file(path):
     return ret
 
 
-def chat_llm_vl(url, param, key):
+async def chat_llm_vl(client, url, param, key):
     headers = {"Authorization": f"Bearer {key}", "content-type": "application/json"}
-    ret = requests.post(url, headers=headers, json=param)
+    ret = await client.post(url, headers=headers, json=param)
     if ret.status_code == 200:
         json_file = json.loads(ret.text)
         res = json_file["choices"][0]["message"]["content"]
@@ -148,50 +149,122 @@ def chat_llm_vl(url, param, key):
         raise Exception("Image retrieval failed")
 
 
+def extract_context_by_img_url(text, target_url, context_length=100):
+    pattern = rf'<img\s+[^>]*src=["\']{re.escape(target_url)}["\'][^>]*>'
+
+    match = re.search(pattern, text)
+    if not match:
+        return ""
+
+    start = match.start()
+    end = match.end()
+
+    context_before = text[max(0, start - context_length) : start].strip()
+    context_after = text[end : end + context_length].strip()
+
+    if ".jpg" in context_before:
+        context_before = ""
+    if "<img" in context_after:
+        context_after = ""
+
+    return context_before + "\n" + context_after
+
+
+async def fetch_image_and_generate_desc(client, img_url, chunk_content, index):
+    try:
+        # acquire image
+        response = await client.get(img_url)
+        if response.status_code == 200:
+            base64_image = base64.b64encode(response.content).decode("utf-8")
+
+            # extract context
+            background = extract_context_by_img_url(
+                chunk_content, img_url, context_length=100
+            )
+
+            # prompt
+            prompt = [
+                {
+                    "type": "text",
+                    "text": f"Context: {background}\nPlease output a summary of the image based on the input image and the description of the image in the context. These summaries will be embedded and used to retrieve the original image. \n**should not exceed 100 words, no blank lines, please output in English**",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/jpeg;base64," + base64_image},
+                },
+            ]
+
+            messages = [{"role": "user", "content": prompt}]
+            dic = {
+                "model": "Qwen2.5-VL-32B-Instruct",
+                "messages": messages,
+                "temperature": 0.8,
+                "max_tokens": 4096,
+            }
+
+            # obtain image description
+            img_desc = await chat_llm_vl(client, VL_MODEL_URL, dic, KEY)
+
+            # replace content
+            pattern = rf'(<img\s+src="{re.escape(img_url)}">)'
+            chunk_content = re.sub(
+                pattern,
+                rf"\1\nThe content described in the above picture:{img_desc}",
+                chunk_content,
+            )
+            return index, chunk_content
+        else:
+            raise Exception(f"Failed to fetch image: {img_url}")
+    except Exception as e:
+        print(f"Error processing image {img_url}: {e}")
+        return index, chunk_content
+
+
 async def gen_img_desc(output_chunks: list):
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    timeout = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
+
+    # create a shared client
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        tasks = []
+        semaphore = asyncio.Semaphore(16)
+
+        # traverse each chunk
         for i in range(len(output_chunks)):
             chunk_content = output_chunks[i]["content"]
             match_img_urls = re.findall(r'<img\s+src="([^"]+)"', chunk_content)
-            if len(match_img_urls) != 0:
-                for j in range(len(match_img_urls)):
-                    img_url = match_img_urls[j]
-                    response = await client.get(img_url)
-                    if response.status_code == 200:
-                        base64_image = base64.b64encode(response.content).decode(
-                            "utf-8"
+
+            if match_img_urls:
+                for img_url in match_img_urls:
+                    # create concurrent tasks
+                    tasks.append(
+                        fetch_image_and_generate_desc_with_semaphore(
+                            semaphore, client, img_url, chunk_content, i
                         )
-                        prompt = [
-                            {
-                                "type": "text",
-                                "text": "请简要描述这张图，**不要超过100字**",
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": "data:image/jpeg;base64," + base64_image
-                                },
-                            },
-                        ]
-                        messages = [
-                            {"role": "user", "content": prompt},
-                        ]
-                        dic = {
-                            "model": "Qwen2.5-VL-32B-Instruct",
-                            "messages": messages,
-                            "temperature": 0.8,
-                            "max_tokens": 4096,
-                        }
-                        img_desc = chat_llm_vl(VL_MODEL_URL, dic, KEY)
-                        pattern = rf'(<img\s+src="{re.escape(img_url)}">)'
-                        chunk_content = re.sub(
-                            pattern,
-                            rf"\1\n上图主要传达的信息是:{img_desc}",
-                            chunk_content,
-                        )
-                    else:
-                        raise Exception("Image retrieval failed")
-                output_chunks[i]["content"] = chunk_content
+                    )
             else:
-                continue
+                # chunks without image links, return the original content directly
+                tasks.append(return_original_chunk(i, chunk_content))
+
+        results = await asyncio.gather(*tasks)
+
+        updated_chunks = [None] * len(output_chunks)
+        for result in results:
+            idx, updated_content = result
+            updated_chunks[idx] = updated_content
+
+        # update the content of export_chunks
+        for i in range(len(output_chunks)):
+            output_chunks[i]["content"] = updated_chunks[i]
+
     return output_chunks
+
+
+async def fetch_image_and_generate_desc_with_semaphore(
+    semaphore, client, img_url, chunk_content, i
+):
+    async with semaphore:
+        return await fetch_image_and_generate_desc(client, img_url, chunk_content, i)
+
+
+async def return_original_chunk(i, chunk_content):
+    return i, chunk_content
