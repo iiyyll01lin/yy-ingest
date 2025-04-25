@@ -45,7 +45,7 @@ while true; do
     fi
     
     # Make the API call and store the response
-    response=$(curl -s -X GET "http://10.3.205.227:8752/status/$uuid")
+    response=$(curl -s -X GET "http://127.0.0.1:8752/status/$uuid")
     
     # Extract status from response
     status=$(echo "$response" | grep -o '"msg":"[^"]*"' | cut -d '"' -f 4)

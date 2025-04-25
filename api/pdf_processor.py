@@ -7,7 +7,7 @@ import requests
 import base64
 import asyncio
 
-from api.config import VL_MODEL_URL, KEY
+from api.config import VL_MODEL_URL, KEY, IMG_DESC_SEMAPHORE_LIMIT
 from magic_pdf.data.data_reader_writer import FileBasedDataWriter
 from magic_pdf.data.dataset import PymuDocDataset
 from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
@@ -226,7 +226,9 @@ async def gen_img_desc(output_chunks: list):
     # create a shared client
     async with httpx.AsyncClient(timeout=timeout) as client:
         tasks = []
-        semaphore = asyncio.Semaphore(16)
+        semaphore = asyncio.Semaphore(
+            IMG_DESC_SEMAPHORE_LIMIT
+        )  # Use configurable value
 
         # traverse each chunk
         for i in range(len(output_chunks)):

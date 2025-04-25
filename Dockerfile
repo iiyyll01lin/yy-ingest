@@ -1,7 +1,7 @@
-FROM pytorch/pytorch:2.2.2-cuda12.1-cudnn8-runtime
+FROM registry.inventec/proxy/pytorch/pytorch:2.2.2-cuda12.1-cudnn8-runtime
 
-ENV http_proxy="http://proxy2.tao.inventec:3128"
-ENV https_proxy="http://proxy2.tao.inventec:3128"
+ENV http_proxy="http://172.123.100.103:3128"
+ENV https_proxy="http://172.123.100.103:3128"
 # ENV PIPURL "https://nexus.itc.inventec.net/repository/pypi-proxy/simple"
 
 WORKDIR /app
