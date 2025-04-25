@@ -14,11 +14,11 @@ UPLOAD_URL = "https://km-search-api.tao.inventec.net/upload"
 TASKS = {}
 
 # control the concurrent quantity for PDF processing
-SEMAPHORE_LIMIT = int(os.getenv("PDF_PROCESSOR_SEMAPHORE", "1"))  # Default 1
+SEMAPHORE_LIMIT = int(os.getenv("PDF_PROCESSOR_SEMAPHORE", "4"))
 SEMAPHORE = asyncio.Semaphore(SEMAPHORE_LIMIT)
 
 # control the concurrent quantity for image description generation
-IMG_DESC_SEMAPHORE_LIMIT = int(os.getenv("IMG_DESC_SEMAPHORE", "1"))  # Default 1
+IMG_DESC_SEMAPHORE_LIMIT = int(os.getenv("IMG_DESC_SEMAPHORE", "8"))
 
 # Log the semaphore values
 logging.info(f"PDF_PROCESSOR_SEMAPHORE set to {SEMAPHORE_LIMIT}")
