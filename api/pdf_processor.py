@@ -170,7 +170,7 @@ def extract_context_by_img_url(text, target_url, context_length=100):
     return context_before + "\n" + context_after
 
 
-async def fetch_image_and_generate_desc(client, img_url, chunk_content, index):
+async def fetch_image_and_generate_desc(client, img_url, chunk_content):
     try:
         # acquire image
         response = await client.get(img_url)
@@ -205,19 +205,12 @@ async def fetch_image_and_generate_desc(client, img_url, chunk_content, index):
             # obtain image description
             img_desc = await chat_llm_vl(client, VL_MODEL_URL, dic, KEY)
 
-            # replace content
-            pattern = rf'(<img\s+src="{re.escape(img_url)}">)'
-            chunk_content = re.sub(
-                pattern,
-                rf"\1\nThe content described in the above picture:{img_desc}",
-                chunk_content,
-            )
-            return index, chunk_content
+            return img_url, img_desc
         else:
             raise Exception(f"Failed to fetch image: {img_url}")
     except Exception as e:
         print(f"Error processing image {img_url}: {e}")
-        return index, chunk_content
+        return img_url, ""
 
 
 async def gen_img_desc(output_chunks: list):
@@ -240,33 +233,34 @@ async def gen_img_desc(output_chunks: list):
                     # create concurrent tasks
                     tasks.append(
                         fetch_image_and_generate_desc_with_semaphore(
-                            semaphore, client, img_url, chunk_content, i
+                            semaphore, client, img_url, chunk_content
                         )
                     )
-            else:
-                # chunks without image links, return the original content directly
-                tasks.append(return_original_chunk(i, chunk_content))
 
         results = await asyncio.gather(*tasks)
+        img_to_desc = dict(results)
 
-        updated_chunks = [None] * len(output_chunks)
-        for result in results:
-            idx, updated_content = result
-            updated_chunks[idx] = updated_content
-
-        # update the content of export_chunks
         for i in range(len(output_chunks)):
-            output_chunks[i]["content"] = updated_chunks[i]
-
+            chunk_content = output_chunks[i]["content"]
+            match_img_urls = re.findall(r'<img\s+src="([^"]+)"', chunk_content)
+            if match_img_urls:
+                # replace content
+                for img_url in match_img_urls:
+                    description = img_to_desc.get(img_url, "")
+                    pattern = rf'(<img\s+src="{re.escape(img_url)}">)'
+                    chunk_content = re.sub(
+                        pattern,
+                        rf"\1\nThe content described in the above picture:{description}",
+                        chunk_content,
+                    )
+                output_chunks[i]["content"] = chunk_content
+            else:
+                continue
     return output_chunks
 
 
 async def fetch_image_and_generate_desc_with_semaphore(
-    semaphore, client, img_url, chunk_content, i
+    semaphore, client, img_url, chunk_content
 ):
     async with semaphore:
-        return await fetch_image_and_generate_desc(client, img_url, chunk_content, i)
-
-
-async def return_original_chunk(i, chunk_content):
-    return i, chunk_content
+        return await fetch_image_and_generate_desc(client, img_url, chunk_content)
