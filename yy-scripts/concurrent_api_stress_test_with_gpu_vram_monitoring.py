@@ -1,13 +1,50 @@
+import argparse
+import os
 import requests
-import time
 import concurrent.futures
+import time
 import json
 import statistics
-import os
-import uuid
 import subprocess  # for running nvidia-smi
 import threading  # concurrent monitoring
-import re
+import re  # for parsing nvidia-smi output
+
+# ----------------------------------------------------------------------------
+# RECOMMENDATION FOR SERVER-SIDE IMPLEMENTATION:
+# Add the following code to the inference service at key processing stages:
+#
+# import torch
+# import time # Ensure time is imported
+#
+# def record_memory_usage(label="", log_file_path=None):
+#     """Records PyTorch CUDA memory usage at key points."""
+#     if not torch.cuda.is_available():
+#         return
+#
+#     current_mem = torch.cuda.memory_allocated() / (1024**2)
+#     max_mem = torch.cuda.max_memory_allocated() / (1024**2)
+#     reserved = torch.cuda.memory_reserved() / (1024**2)
+#
+#     message = f"[{label}] Current: {current_mem:.2f} MB, Peak: {max_mem:.2f} MB, Reserved: {reserved:.2f} MB"
+#
+#     if log_file_path:
+#         try:
+#             with open(log_file_path, "a") as log_file: # Open in append mode
+#                 log_file.write(f"{time.time()},{label},{current_mem:.2f},{max_mem:.2f},{reserved:.2f}\\n")
+#         except Exception as e:
+#             print(f"Error writing to memory log file {log_file_path}: {e}")
+#     else:
+#         print(message)
+#
+# # Example usage (replace 'path/to/memory.log' with desired path):
+# # memory_log = "path/to/memory.log"
+# # record_memory_usage("before_model_load", memory_log)
+# # record_memory_usage("after_model_load", memory_log)
+# # record_memory_usage("before_inference", memory_log)
+# # record_memory_usage("after_inference", memory_log)
+# # record_memory_usage("after_cleanup", memory_log)
+# ----------------------------------------------------------------------------
+
 
 # --- Configuration ---
 # Get the API host from environment variables or use default
@@ -25,7 +62,7 @@ BASE_PAYLOAD = {
     "start_page": 1,
     "end_page": 17,
 }
-GPU_MONITOR_INTERVAL = 1  # seconds - How often to check VRAM
+GPU_MONITOR_INTERVAL = 0.1  # seconds - How often to check VRAM (was 1.0)
 GPU_ID = [6, 7]  # List of GPU IDs to monitor (empty list to monitor all GPUs)
 
 # --- Proxy Configuration ---
@@ -37,7 +74,7 @@ GPU_ID = [6, 7]  # List of GPU IDs to monitor (empty list to monitor all GPUs)
 PROXIES = None
 
 
-# --- GPU Monitoring Function ---
+# --- GPU Monitoring Functions ---
 def monitor_gpu_vram(stop_event, vram_data, interval=1, gpu_ids=None):
     """
     Monitors GPU VRAM usage using nvidia-smi in a separate thread.
@@ -157,6 +194,103 @@ def monitor_gpu_vram(stop_event, vram_data, interval=1, gpu_ids=None):
         stop_event.wait(interval)
 
     print("GPU Monitor: Stopping VRAM monitoring.")
+
+
+def monitor_gpu_dmon(stop_event, dmon_data, gpu_ids=None, interval=0.5):
+    """
+    Monitor GPU metrics using nvidia-smi dmon for continuous updates with lower overhead.
+    """
+    try:
+        # Format GPU IDs for the command
+        if gpu_ids and len(gpu_ids) > 0:
+            gpu_id_str = ",".join(map(str, gpu_ids))
+            cmd = [
+                "nvidia-smi",
+                "dmon",
+                "-i",
+                gpu_id_str,
+                "-s",
+                "um",  # Memory utilization and usage
+                "-d",
+                str(interval),  # Sampling interval
+            ]
+        else:
+            cmd = [
+                "nvidia-smi",
+                "dmon",
+                "-s",
+                "um",  # Memory utilization and usage
+                "-d",
+                str(interval),
+            ]
+
+        # Start the process and process output continuously
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # Line buffered
+        )
+
+        print(
+            f"GPU dmon Monitor: Started continuous monitoring with {interval}s interval for GPUs: {gpu_id_str if gpu_ids else 'All'}"
+        )
+
+        for line in iter(process.stdout.readline, ""):
+            if stop_event.is_set():
+                process.terminate()
+                try:
+                    process.wait(timeout=1)  # Give it a moment to terminate
+                except subprocess.TimeoutExpired:
+                    process.kill()  # Force kill if it doesn't terminate
+                break
+
+            # Skip header lines
+            if line.startswith("#"):
+                continue
+
+            # Parse the dmon output (Example format: gpu util mem util mem)
+            # Example line: 0   50   60 3964
+            timestamp = time.time()
+            fields = line.strip().split()
+
+            if len(fields) >= 4:  # Expecting at least GPU ID, Util, Mem Util, Mem Used
+                try:
+                    gpu_id = int(fields[0])
+                    # mem_util = int(fields[2]) # Assuming field 2 is memory util %
+                    mem_used = int(fields[3])  # Assuming field 3 is memory used MiB
+
+                    dmon_data.append(
+                        {
+                            "timestamp": timestamp,
+                            "gpu_id": gpu_id,
+                            # "mem_util_pct": mem_util,
+                            "mem_used_mib": mem_used,
+                        }
+                    )
+                except (ValueError, IndexError) as e:
+                    print(
+                        f"GPU dmon Monitor: Error parsing output: {line.strip()} - {e}"
+                    )
+            elif (
+                line.strip()
+            ):  # Log non-empty, non-header lines that don't match format
+                print(f"GPU dmon Monitor: Unexpected line format: {line.strip()}")
+
+        # Ensure process is terminated after loop (e.g., if stdout closes)
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        print("GPU dmon Monitor: Stopped.")
+
+    except FileNotFoundError:
+        print("GPU dmon Monitor: Error: 'nvidia-smi' command not found.")
+    except Exception as e:
+        print(f"GPU dmon Monitor: Error: {e}")
 
 
 def poll_status(session, status_url, task_id):
@@ -340,10 +474,10 @@ def execute_and_poll_task(session, request_id, payload):
 
 def stress_test(concurrent_request_num):
     all_results = []
-    vram_readings = []  # List to store VRAM readings
-    stop_monitoring_event = (
-        threading.Event()
-    )  # Event to signal monitoring thread to stop
+    vram_readings = []  # Regular nvidia-smi polling
+    dmon_readings = []  # Continuous dmon readings
+
+    stop_monitoring_event = threading.Event()
 
     # Create a session with proxy configuration
     session = requests.Session()
@@ -362,13 +496,21 @@ def stress_test(concurrent_request_num):
     )
     print(f"Using Proxies: {PROXIES}")
 
-    # Start GPU monitoring thread
+    # Start both monitoring methods in parallel
     monitor_thread = threading.Thread(
         target=monitor_gpu_vram,
         args=(stop_monitoring_event, vram_readings, GPU_MONITOR_INTERVAL, GPU_ID),
         daemon=True,
     )
+
+    dmon_thread = threading.Thread(
+        target=monitor_gpu_dmon,
+        args=(stop_monitoring_event, dmon_readings, GPU_ID, 0.5),
+        daemon=True,
+    )
+
     monitor_thread.start()
+    dmon_thread.start()
 
     start_overall_time = time.time()
 
@@ -431,6 +573,7 @@ def stress_test(concurrent_request_num):
         monitor_thread.join(
             timeout=GPU_MONITOR_INTERVAL * 2
         )  # Wait for monitor thread to finish
+        dmon_thread.join(timeout=1.0)
         if monitor_thread.is_alive():
             print("GPU Monitor: Warning - Monitor thread did not stop gracefully.")
 
@@ -447,12 +590,22 @@ def stress_test(concurrent_request_num):
 
     # Pass VRAM readings to the report generator
     return generate_report(
-        all_results, concurrent_request_num, vram_readings, pdf_semaphore, img_semaphore
+        all_results,
+        concurrent_request_num,
+        vram_readings,
+        dmon_readings,
+        pdf_semaphore,
+        img_semaphore,
     )
 
 
 def generate_report(
-    results, concurrent_request_num, vram_readings, pdf_semaphore, img_semaphore
+    results,
+    concurrent_request_num,
+    vram_readings,
+    dmon_readings,
+    pdf_semaphore,
+    img_semaphore,
 ):
     total_tasks = len(results)
     success_count = sum(1 for result in results if result["success"])
@@ -600,19 +753,22 @@ def print_report(report):
     print("\n")
 
 
-def save_report(report, concurrent_request_num):
+def save_report(
+    report, concurrent_request_num, output_json_path=None
+):  # Add output_json_path argument
+    # --- Save Detailed Markdown Report ---
     try:
-        # Use absolute path for reports directory
+        # Use absolute path for reports directory relative to script
         script_dir = os.path.dirname(os.path.abspath(__file__))
         report_dir = os.path.join(script_dir, "stress_test_reports")
         os.makedirs(report_dir, exist_ok=True)
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = os.path.join(
+        md_filename = os.path.join(
             report_dir,
             f"stress_test_report_{concurrent_request_num}_req_{timestamp}.md",
         )
-        print(f"Saving report to {filename}")
+        print(f"Saving detailed Markdown report to {md_filename}")
 
         md_report = f"# Stress Test Report ({timestamp})\n\n"
         md_report += f"- **Concurrent Requests**: {report['Concurrent Requests']}\n"
@@ -680,17 +836,19 @@ def save_report(report, concurrent_request_num):
                     f"{full_error} |\n"
                 )
 
-        with open(filename, "w", encoding="utf-8") as md_file:
+        with open(md_filename, "w", encoding="utf-8") as md_file:
             md_file.write(md_report)
 
         # Verify file was written
-        if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            print(f"Report successfully saved to {filename}")
+        if os.path.exists(md_filename) and os.path.getsize(md_filename) > 0:
+            print(f"Detailed Markdown report successfully saved to {md_filename}")
         else:
-            print(f"Warning: Report file appears to be empty or was not created")
+            print(
+                f"Warning: Detailed Markdown report file appears to be empty or was not created: {md_filename}"
+            )
 
     except Exception as e:
-        print(f"Error saving report: {str(e)}")
+        print(f"Error saving detailed Markdown report: {str(e)}")
         # Try alternative location
         try:
             alt_filename = (
@@ -703,19 +861,100 @@ def save_report(report, concurrent_request_num):
         except Exception as alt_e:
             print(f"Failed to save report to alternative location: {str(alt_e)}")
 
+    # --- Save Simple JSON Report (for optimization script) ---
+    if output_json_path:
+        try:
+            print(f"Saving simple JSON report to {output_json_path}")
+            # Extract key metrics needed by find_optimal_semaphores.py
+            avg_time_str = report["Task Completion Times (Successful Tasks)"][
+                "Average (s)"
+            ]
+            avg_time = (
+                float(avg_time_str) if avg_time_str != "N/A" else 9999
+            )  # Use a large number if N/A
+
+            # Find the overall max VRAM usage across all monitored GPUs
+            max_vram = 0
+            vram_stats = report.get("GPU VRAM Usage", {})
+            for gpu_name, gpu_data in vram_stats.items():
+                if (
+                    "No GPU data" not in gpu_name
+                    and gpu_data.get("Max Used (MiB)") != "N/A"
+                ):
+                    max_vram = max(max_vram, gpu_data["Max Used (MiB)"])
+
+            json_data = {
+                "success_rate": float(report["Success Rate (%)"]),
+                "average_time": avg_time,
+                "max_vram_usage": max_vram,
+                # Add other relevant simple metrics if needed
+            }
+
+            with open(output_json_path, "w", encoding="utf-8") as f:
+                json.dump(json_data, f, indent=4)
+
+            # Verify JSON file was written
+            if (
+                os.path.exists(output_json_path)
+                and os.path.getsize(output_json_path) > 0
+            ):
+                print(f"Simple JSON report successfully saved to {output_json_path}")
+            else:
+                print(
+                    f"Warning: Simple JSON report file appears to be empty or was not created: {output_json_path}"
+                )
+
+        except Exception as e:
+            print(f"Error saving simple JSON report to {output_json_path}: {str(e)}")
+            # Attempt to create a fallback error JSON if saving fails
+            try:
+                fallback_data = {
+                    "success_rate": 0,
+                    "average_time": 9999,
+                    "max_vram_usage": 0,
+                    "note": f"Error generating JSON report: {str(e)}",
+                }
+                with open(output_json_path, "w", encoding="utf-8") as f:
+                    json.dump(fallback_data, f, indent=4)
+                print(f"Saved fallback error JSON report to {output_json_path}")
+            except Exception as fallback_e:
+                print(f"Failed to save fallback error JSON report: {fallback_e}")
+    else:
+        print("No output JSON path provided, skipping simple JSON report.")
+
 
 if __name__ == "__main__":
-    # Number of concurrent requests to simulate
-    concurrent_request_num = 8
-    if len(os.sys.argv) > 1:
-        try:
-            concurrent_request_num = int(os.sys.argv[1])
-            print(
-                f"Running with {concurrent_request_num} concurrent requests from command line argument."
-            )
-        except ValueError:
-            print(
-                f"Invalid argument: {os.sys.argv[1]}. Using default: {concurrent_request_num}"
-            )
+    parser = argparse.ArgumentParser(
+        description="Run concurrent API stress test with GPU monitoring."
+    )
+    parser.add_argument(
+        "concurrent_requests",
+        type=int,
+        help="Number of concurrent requests to simulate.",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,  # Default to None if not provided
+        help="Path to save the simple JSON output report file.",
+    )
+    args = parser.parse_args()
 
-    stress_test(concurrent_request_num)
+    concurrent_request_num = args.concurrent_requests
+    output_json_file = args.output  # Get the output path from args
+
+    print(f"Running with {concurrent_request_num} concurrent requests.")
+    if output_json_file:
+        print(f"Simple JSON report will be saved to: {output_json_file}")
+    else:
+        print("No --output path specified, simple JSON report will not be saved.")
+
+    # Call stress_test and pass the output path to generate_report implicitly
+    final_report_data = stress_test(concurrent_request_num)
+
+    # Explicitly call save_report with the output path AFTER the test run
+    # This ensures save_report is called even if generate_report doesn't exist or is modified
+    if final_report_data:
+        save_report(final_report_data, concurrent_request_num, output_json_file)
+    else:
+        print("Stress test did not return report data. Cannot save report.")

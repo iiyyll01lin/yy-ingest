@@ -1,0 +1,141 @@
+Command: python3 concurrent_api_stress_test_with_gpu_vram_monitoring.py 21 --output semaphore_optimization_20250428_142553/stress_test_report_21_8_17.json
+Return Code: 1
+Stdout:
+Running with 21 concurrent requests.
+Simple JSON report will be saved to: semaphore_optimization_20250428_142553/stress_test_report_21_8_17.json
+
+Starting stress test with 21 concurrent requests...
+Target Endpoint: http://172.17.232.194:8752/transform
+Status Endpoint Base: http://172.17.232.194:8752/status/
+Polling Interval: 0.5s, Timeout: 600s
+GPU VRAM Monitoring Interval: 0.1s
+GPU IDs to Monitor: 6, 7
+Using Proxies: None
+GPU Monitor: Starting VRAM monitoring for GPUs 6, 7...
+Testing with PDF_PROCESSOR_SEMAPHORE=8, IMG_DESC_SEMAPHORE=17
+GPU dmon Monitor: Started continuous monitoring with 0.5s interval for GPUs: 6,7
+GPU dmon Monitor: Error parsing output: Collection delay/interval should be between 1 second and 600 seconds - invalid literal for int() with base 10: 'Collection'
+GPU dmon Monitor: Error parsing output: Usage: nvidia-smi dmon [options] - invalid literal for int() with base 10: 'Usage:'
+GPU dmon Monitor: Unexpected line format: Options include:
+GPU dmon Monitor: Error parsing output: [-i | --id]:          Comma separated Enumeration index, PCI bus ID or UUID - invalid literal for int() with base 10: '[-i'
+GPU dmon Monitor: Error parsing output: [-d | --delay]:       Collection delay/interval in seconds [default=1sec] - invalid literal for int() with base 10: '[-d'
+GPU dmon Monitor: Error parsing output: [-c | --count]:       Collect specified number of samples and exit - invalid literal for int() with base 10: '[-c'
+GPU dmon Monitor: Error parsing output: [-s | --select]:      One or more metrics [default=puc] - invalid literal for int() with base 10: '[-s'
+GPU dmon Monitor: Error parsing output: Can be any of the following: - invalid literal for int() with base 10: 'Can'
+GPU dmon Monitor: Error parsing output: p - Power Usage and Temperature - invalid literal for int() with base 10: 'p'
+GPU dmon Monitor: Unexpected line format: u - Utilization
+GPU dmon Monitor: Error parsing output: c - Proc and Mem Clocks - invalid literal for int() with base 10: 'c'
+GPU dmon Monitor: Error parsing output: v - Power and Thermal Violations - invalid literal for int() with base 10: 'v'
+GPU dmon Monitor: Error parsing output: m - FB, Bar1 and CC Protected Memory - invalid literal for int() with base 10: 'm'
+GPU dmon Monitor: Error parsing output: e - ECC Errors and PCIe Replay errors - invalid literal for int() with base 10: 'e'
+GPU dmon Monitor: Error parsing output: t - PCIe Rx and Tx Throughput - invalid literal for int() with base 10: 't'
+GPU dmon Monitor: Error parsing output: [N/A | --gpm-metrics]: Comma-separated list of GPM metrics to watch - invalid literal for int() with base 10: '[N/A'
+GPU dmon Monitor: Unexpected line format: Available metrics:
+GPU dmon Monitor: Error parsing output: Graphics Activity    = 1 - invalid literal for int() with base 10: 'Graphics'
+GPU dmon Monitor: Error parsing output: SM Activity          = 2 - invalid literal for int() with base 10: 'SM'
+GPU dmon Monitor: Error parsing output: SM Occupancy         = 3 - invalid literal for int() with base 10: 'SM'
+GPU dmon Monitor: Error parsing output: Integer Activity     = 4 - invalid literal for int() with base 10: 'Integer'
+GPU dmon Monitor: Error parsing output: Tensor Activity      = 5 - invalid literal for int() with base 10: 'Tensor'
+GPU dmon Monitor: Error parsing output: DFMA Tensor Activity = 6 - invalid literal for int() with base 10: 'DFMA'
+GPU dmon Monitor: Error parsing output: HMMA Tensor Activity = 7 - invalid literal for int() with base 10: 'HMMA'
+GPU dmon Monitor: Error parsing output: IMMA Tensor Activity = 9 - invalid literal for int() with base 10: 'IMMA'
+GPU dmon Monitor: Error parsing output: DRAM Activity        = 10 - invalid literal for int() with base 10: 'DRAM'
+GPU dmon Monitor: Error parsing output: FP64 Activity        = 11 - invalid literal for int() with base 10: 'FP64'
+GPU dmon Monitor: Error parsing output: FP32 Activity        = 12 - invalid literal for int() with base 10: 'FP32'
+GPU dmon Monitor: Error parsing output: FP16 Activity        = 13 - invalid literal for int() with base 10: 'FP16'
+GPU dmon Monitor: Error parsing output: PCIe TX              = 20 - invalid literal for int() with base 10: 'PCIe'
+GPU dmon Monitor: Error parsing output: PCIe RX              = 21 - invalid literal for int() with base 10: 'PCIe'
+GPU dmon Monitor: Error parsing output: NVDEC 0-7 Activity   = 30-37 - invalid literal for int() with base 10: 'NVDEC'
+GPU dmon Monitor: Error parsing output: NVJPG 0-7 Activity   = 40-47 - invalid literal for int() with base 10: 'NVJPG'
+GPU dmon Monitor: Error parsing output: NVOFA 0 Activity     = 50 - invalid literal for int() with base 10: 'NVOFA'
+GPU dmon Monitor: Error parsing output: NVLink Total RX      = 60 - invalid literal for int() with base 10: 'NVLink'
+GPU dmon Monitor: Error parsing output: NVLink Total TX      = 61 - invalid literal for int() with base 10: 'NVLink'
+GPU dmon Monitor: Error parsing output: NVLink L0-17 RX      = 62, 64, 66, ..., 96 - invalid literal for int() with base 10: 'NVLink'
+GPU dmon Monitor: Error parsing output: NVLink L0-17 TX      = 63, 65, 67, ..., 97 - invalid literal for int() with base 10: 'NVLink'
+GPU dmon Monitor: Error parsing output: [N/A | --gpm-options]: options of which level of GPM metrics to monitor: - invalid literal for int() with base 10: '[N/A'
+GPU dmon Monitor: Error parsing output: d  - Display Device level GPM Metrics only - invalid literal for int() with base 10: 'd'
+GPU dmon Monitor: Error parsing output: m  - Display MIG level GPM Metrics only - invalid literal for int() with base 10: 'm'
+GPU dmon Monitor: Error parsing output: dm - Display both Device and MIG level GPM Metrics only - invalid literal for int() with base 10: 'dm'
+GPU dmon Monitor: Error parsing output: md - Display both Device and MIG level GPM Metrics only - invalid literal for int() with base 10: 'md'
+GPU dmon Monitor: Error parsing output: [-o | --options]:     One or more from the following: - invalid literal for int() with base 10: '[-o'
+GPU dmon Monitor: Error parsing output: D - Include Date (YYYYMMDD) in scrolling output - invalid literal for int() with base 10: 'D'
+GPU dmon Monitor: Error parsing output: T - Include Time (HH:MM:SS) in scrolling output - invalid literal for int() with base 10: 'T'
+GPU dmon Monitor: Error parsing output: [-f | --filename]:    Log to a specified file, rather than to stdout - invalid literal for int() with base 10: '[-f'
+GPU dmon Monitor: Error parsing output: [-h | --help]:        Display help information - invalid literal for int() with base 10: '[-h'
+GPU dmon Monitor: Error parsing output: [N/A | --format]:     Output format specifiers: - invalid literal for int() with base 10: '[N/A'
+GPU dmon Monitor: Error parsing output: csv - Format dmon output as a CSV - invalid literal for int() with base 10: 'csv'
+GPU dmon Monitor: Error parsing output: nounit - Remove units line from dmon output - invalid literal for int() with base 10: 'nounit'
+GPU dmon Monitor: Error parsing output: noheader - Remove heading line from dmon output - invalid literal for int() with base 10: 'noheader'
+GPU dmon Monitor: Stopped.
+Task 2: Final status - success
+Task 0: Final status - success
+Task 5: Final status - success
+Task 1: Final status - success
+Task 3: Final status - success
+Task 7: Final status - success
+Task 6: Final status - success
+Task 4: Final status - success
+Task 8: Final status - success
+Task 11: Final status - success
+Task 10: Final status - success
+Task 12: Final status - success
+Task 9: Final status - success
+Task 16: Final status - success
+Task 14: Final status - success
+Task 13: Final status - success
+Task 15: Final status - success
+Task 20: Final status - success
+Task 17: Final status - success
+Task 18: Final status - success
+Task 19: Final status - success
+Stress test task submission complete. Waiting for tasks and stopping monitor...
+GPU Monitor: Stopping VRAM monitoring.
+
+Stress test finished in 424.57 seconds.
+
+=== Stress Test Report ===
+
+Concurrent Requests: 21
+Total Tasks Attempted: 21
+Successful Tasks: 21
+Failed Tasks: 0
+Success Rate: 100.0%
+
+Task Completion Times (Successful Tasks):
+  Count: 21
+  Average (s): 261.48
+  Max (s): 424.54
+  Min (s): 109.76
+  Median (s): 263.78
+  Stdev (s): 112.99
+
+GPU VRAM Usage:
+  GPU 6:
+    Min Used (MiB): 0
+    Max Used (MiB): 0
+    Avg Used (MiB): 0
+    Total (MiB): 46068
+    Readings: 3029
+  GPU 7:
+    Min Used (MiB): 0
+    Max Used (MiB): 6706
+    Avg Used (MiB): 4546
+    Total (MiB): 46068
+    Readings: 3029
+
+
+Saving detailed Markdown report to /data/ssd1/mineru/doc-ingester/yy-scripts/stress_test_reports/stress_test_report_21_req_20250428_155310.md
+Detailed Markdown report successfully saved to /data/ssd1/mineru/doc-ingester/yy-scripts/stress_test_reports/stress_test_report_21_req_20250428_155310.md
+No output JSON path provided, skipping simple JSON report.
+Saving detailed Markdown report to /data/ssd1/mineru/doc-ingester/yy-scripts/stress_test_reports/stress_test_report_21_req_20250428_155310.md
+Detailed Markdown report successfully saved to /data/ssd1/mineru/doc-ingester/yy-scripts/stress_test_reports/stress_test_report_21_req_20250428_155310.md
+Saving simple JSON report to semaphore_optimization_20250428_142553/stress_test_report_21_8_17.json
+Simple JSON report successfully saved to semaphore_optimization_20250428_142553/stress_test_report_21_8_17.json
+Running stress test with 10 concurrent requests.
+
+Stderr:
+Traceback (most recent call last):
+  File "/data/ssd1/mineru/doc-ingester/yy-scripts/concurrent_api_stress_test_with_gpu_vram_monitoring.py", line 925, in <module>
+    # Pass semaphore values if testing specific configurations (e.g., from find_optimal_semaphores.py)
+TypeError: stress_test() got an unexpected keyword argument 'pdf_semaphore'
+
