@@ -74,12 +74,14 @@ The power-of-2 sequence is ideal for concurrency testing because:
 ## Finding the "Knee of the Curve"
 
 This approach helps identify the "sweet spot" where:
+
 * Adding more concurrency still improves throughput (not bottlenecked)
 * But not so much that resources are oversubscribed (causing failures or diminishing returns)
 
 ## Recommendations
 
 After initial testing, you might want to:
+
 * **Refine the range**: If best performance is at the edges, expand testing in that direction
 * **Add intermediate values**: Test values between the best performers (e.g., if 4 and 8 both perform well, try 6)
 * **Test extreme values**: Try a very high value (like 32) to confirm when system degrades
